@@ -1,0 +1,21 @@
+{
+  "name": "Aiken Cardano Development",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  
+  // Customizes the VS Code settings inside the Codespace
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "aiken-lang.aiken" // Automatically installs the Aiken extension
+      ]
+    }
+  },
+
+  // Runs commands to install aikup and aiken after the container is created
+  "postCreateCommand": "curl -sSfL https://install.aiken-lang.org | bash && export PATH=\"$HOME/.aiken/bin:$PATH\" && aikup",
+
+  // Ensures the aiken path is always available in the terminal sessions
+  "remoteEnv": {
+    "PATH": "${containerEnv:HOME}/.aiken/bin:${containerEnv:PATH}"
+  }
+}
