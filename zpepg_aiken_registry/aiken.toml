@@ -1,13 +1,13 @@
-name = "cyphonvoid/hello_world"
+name = "cyphonvoid/zpepg_aiken_registry"
 version = "0.0.0"
 compiler = "v1.1.22"
 plutus = "v3"
 license = "Apache-2.0"
-description = "Aiken contracts for project 'cyphonvoid/hello_world'"
+description = "Aiken contracts for project 'cyphonvoid/zpepg_aiken_registry'"
 
 [repository]
 user = "cyphonvoid"
-project = "hello_world"
+project = "zpepg_aiken_registry"
 platform = "github"
 
 [[dependencies]]
