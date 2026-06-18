@@ -74,7 +74,7 @@ pub type RegistryAction {
     signature: Signature,
   }
   Pause { nonce: Int, signature: Signature }
-  Unpause { nonce: Int, signature: Signature }
+  Resume { nonce: Int, signature: Signature }
   Withdraw { nonce: Int, amount: Int, signature: Signature }
   RotateKey {
     nonce: Int,
@@ -100,9 +100,9 @@ pub type KeyType {
 
 // ── Mint Policy Redeemer ─────────────────────────────────────────────────
 
-pub type MintAction {
-  Mint
-  Burn
+pub type CreateTokenAction {
+  MintToken
+  BurnToken
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────
@@ -270,21 +270,22 @@ validator archive_registry {
         True
       }
 
-      Unpause { nonce, signature } -> {
+      Resume { nonce, signature } -> {
         // 1. Nonce must match current state exactly
         expect nonce == old_datum.nonce
 
-        // 2. Signature must be valid for authority_key over (nonce, "UNPAUSE")
+        // 2. Signature must be valid for authority_key over (nonce, "RESUME")
         let signed_payload =
           bytearray.concat(
             bytearray.from_int_big_endian(nonce, 8),
-            "UNPAUSE",
+            "RESUME",
           )
         expect verify_ed25519_signature(
           old_datum.authority_key,
           signed_payload,
           signature,
         )
+
 
         // 3. Find the new master UTXO output and its index
         let master_input = find_master_input(self.inputs, own_ref)
@@ -509,9 +510,10 @@ validator archive_registry {
     }
   }
 
-  mint(redeemer: MintAction, policy_id: ByteArray, self: Transaction) {
-    when redeemer is {
-      Mint -> {
+  mint(token_action: CreateTokenAction, policy_id: ByteArray, self: Transaction) {
+    when token_action is {
+
+      MintToken -> {
         // 1. Exactly one token must be minted under this policy
         let minted_assets = assets.tokens(self.mint, policy_id)
         expect [Pair(asset_name, quantity)] = dict.to_pairs(minted_assets)
@@ -537,8 +539,8 @@ validator archive_registry {
         True
       }
 
-      Burn -> {
-        // Burning is not yet supported — explicitly disallowed for now
+      BurnToken -> {
+        // Token is immutable, non burnable, unerasable. Explicitly disallowed by design.
         False
       }
     }
