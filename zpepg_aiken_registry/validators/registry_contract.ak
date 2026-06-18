@@ -9,8 +9,11 @@ use cardano/transaction.{
 }
 use cardano/script_context.{ScriptContext}
 use aiken/collection/list
+
 // ── Master Registry Datum ───────────────────────────────────────────────
 // Fixed size forever — no maps, no growing collections.
+// Version history is reconstructible off-chain by querying all assets under
+// policy_id and grouping/sorting by the UUID + version byte in the asset name.
 
 pub type MasterDatum {
   authority_key: VerificationKey,
@@ -21,7 +24,6 @@ pub type MasterDatum {
   is_paused: Bool,
   policy_id: ByteArray,
   asset_name_prefix: ByteArray,
-  versions_utxo_ref: OutputReference,
   // Deployment chain — populated only when a chain link has been created.
   // Empty/zeroed when this deployment has not linked forward.
   chain_link: Option<DeploymentChainLink>,
@@ -53,13 +55,6 @@ pub type TokenDatum {
   token_data: ByteArray,
   registry_address: ByteArray,
   policy_id: ByteArray,
-}
-
-// ── Versions Datum ───────────────────────────────────────────────────────
-// sha256(global_id) -> ordered list of asset names, oldest to newest.
-
-pub type VersionsDatum {
-  document_chains: Pairs<ByteArray, List<ByteArray>>,
 }
 
 // ── Registry Action Redeemer ─────────────────────────────────────────────
@@ -177,7 +172,7 @@ validator archive_registry {
         expect new_datum.is_paused == old_datum.is_paused
         expect new_datum.policy_id == old_datum.policy_id
         expect new_datum.asset_name_prefix == old_datum.asset_name_prefix
-        expect new_datum.versions_utxo_ref == old_datum.versions_utxo_ref
+        expect new_datum.chain_link == old_datum.chain_link
 
         True
       }
@@ -216,7 +211,6 @@ validator archive_registry {
         expect new_datum.owner_address == old_datum.owner_address
         expect new_datum.policy_id == old_datum.policy_id
         expect new_datum.asset_name_prefix == old_datum.asset_name_prefix
-        expect new_datum.versions_utxo_ref == old_datum.versions_utxo_ref
         expect new_datum.chain_link == old_datum.chain_link
 
         True
@@ -256,7 +250,6 @@ validator archive_registry {
         expect new_datum.owner_address == old_datum.owner_address
         expect new_datum.policy_id == old_datum.policy_id
         expect new_datum.asset_name_prefix == old_datum.asset_name_prefix
-        expect new_datum.versions_utxo_ref == old_datum.versions_utxo_ref
         expect new_datum.chain_link == old_datum.chain_link
 
         True
@@ -309,7 +302,6 @@ validator archive_registry {
         expect new_datum.is_paused == old_datum.is_paused
         expect new_datum.policy_id == old_datum.policy_id
         expect new_datum.asset_name_prefix == old_datum.asset_name_prefix
-        expect new_datum.versions_utxo_ref == old_datum.versions_utxo_ref
         expect new_datum.chain_link == old_datum.chain_link
 
         True
@@ -377,7 +369,6 @@ validator archive_registry {
         expect new_datum.is_paused == old_datum.is_paused
         expect new_datum.policy_id == old_datum.policy_id
         expect new_datum.asset_name_prefix == old_datum.asset_name_prefix
-        expect new_datum.versions_utxo_ref == old_datum.versions_utxo_ref
         expect new_datum.chain_link == old_datum.chain_link
 
         True
@@ -442,15 +433,12 @@ validator archive_registry {
         expect new_datum.is_paused == old_datum.is_paused
         expect new_datum.policy_id == old_datum.policy_id
         expect new_datum.asset_name_prefix == old_datum.asset_name_prefix
-        expect new_datum.versions_utxo_ref == old_datum.versions_utxo_ref
 
         True
       }
-
     }
   }
 
-  
   mint(redeemer: MintAction, policy_id: ByteArray, self: Transaction) {
     when redeemer is {
       Mint -> {
