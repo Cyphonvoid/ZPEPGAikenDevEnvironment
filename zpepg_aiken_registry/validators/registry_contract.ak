@@ -5,7 +5,7 @@ use aiken/primitive/bytearray
 use aiken/crypto.{VerificationKey, Signature, verify_ed25519_signature}
 use cardano/address.{Address, Credential, Script}
 use cardano/transaction.{
-  OutputReference, Transaction, Input, Output, Datum, InlineDatum, NoDatum, DatumHash,
+  OutputReference, Transaction, TransactionId, Input, Output, Datum, InlineDatum, NoDatum, DatumHash,
 }
 use cardano/script_context.{ScriptContext}
 use aiken/collection/list
@@ -14,6 +14,12 @@ use aiken/collection/list
 // Fixed size forever — no maps, no growing collections.
 // Version history is reconstructible off-chain by querying all assets under
 // policy_id and grouping/sorting by the UUID + version byte in the asset name.
+//
+// self_ref: the OutputReference of this very UTXO on-chain.
+// Every transaction must verify own_ref == old_datum.self_ref (proving the
+// correct canonical Master UTXO is being spent) and must write the new
+// output's reference into new_datum.self_ref (rolling it forward).
+// This prevents anyone from substituting a fake or stale Master UTXO.
 
 pub type MasterDatum {
   authority_key: VerificationKey,
@@ -24,8 +30,9 @@ pub type MasterDatum {
   is_paused: Bool,
   policy_id: ByteArray,
   asset_name_prefix: ByteArray,
+  self_ref: OutputReference,
   // Deployment chain — populated only when a chain link has been created.
-  // Empty/zeroed when this deployment has not linked forward.
+  // None until LinkDeployment is called; set exactly once, never changed after.
   chain_link: Option<DeploymentChainLink>,
 }
 
@@ -106,19 +113,53 @@ fn find_master_input(inputs: List<Input>, own_ref: OutputReference) -> Output {
   input.output
 }
 
-fn find_master_output(
+// Finds the new Master UTXO output and returns it paired with its index
+// in the outputs list. The index is needed to construct the new self_ref.
+fn find_master_output_with_index(
   outputs: List<Output>,
   registry_address: Address,
-) -> Output {
-  expect Some(output) =
-    list.find(outputs, fn(o) { o.address == registry_address })
-  output
+) -> (Output, Int) {
+  find_output_with_index_loop(outputs, registry_address, 0)
+}
+
+fn find_output_with_index_loop(
+  outputs: List<Output>,
+  registry_address: Address,
+  index: Int,
+) -> (Output, Int) {
+  when outputs is {
+    [] -> fail @"Master output not found at script address"
+    [head, ..tail] ->
+      if head.address == registry_address {
+        (head, index)
+      } else {
+        find_output_with_index_loop(tail, registry_address, index + 1)
+      }
+  }
 }
 
 fn datum_from_output(output: Output) -> MasterDatum {
   expect InlineDatum(datum_data) = output.datum
   expect master_datum: MasterDatum = datum_data
   master_datum
+}
+
+// Constructs the OutputReference for a new output produced by this transaction.
+// tx_id is self.id (the current transaction's hash).
+// output_index is the position of the output in self.outputs (0-based).
+fn make_output_ref(tx_id: TransactionId, output_index: Int) -> OutputReference {
+  OutputReference { transaction_id: tx_id, output_index }
+}
+
+// ── Canonical Master UTXO check ────────────────────────────────────────
+// Called at the top of every spend branch.
+// Verifies that the UTXO currently being spent is the canonical Master UTXO
+// by checking own_ref (injected by Cardano) against self_ref stored in the datum.
+// Any fake, stale, or wrong-deployment UTXO will have a mismatched self_ref
+// and will be rejected here before any other logic runs.
+
+fn verify_canonical_master(own_ref: OutputReference, datum: MasterDatum) {
+  expect own_ref == datum.self_ref
 }
 
 // ── Spend Validator ────────────────────────────────────────────────────
@@ -132,6 +173,11 @@ validator archive_registry {
     self: Transaction,
   ) {
     expect Some(old_datum) = datum
+
+    // ── Canonical master UTXO check — runs before every branch ──────────
+    // Proves the UTXO being spent is the real canonical Master UTXO.
+    // Rejects any fake, stale, or wrong-deployment substitution attempt.
+    verify_canonical_master(own_ref, old_datum)
 
     when redeemer is {
       MintDocument { nonce, global_identifier, version, signature } -> {
@@ -156,15 +202,19 @@ validator archive_registry {
           signature,
         )
 
-        // 4. The new master UTXO output must exist at the same script address
+        // 4. Find the new master UTXO output and its index
         let master_input = find_master_input(self.inputs, own_ref)
-        let new_output = find_master_output(self.outputs, master_input.address)
+        let (new_output, new_output_index) =
+          find_master_output_with_index(self.outputs, master_input.address)
         let new_datum = datum_from_output(new_output)
 
         // 5. New datum must have nonce incremented by exactly 1
         expect new_datum.nonce == old_datum.nonce + 1
 
-        // 6. All other fields must remain unchanged — no tampering
+        // 6. self_ref must be updated to point to the new output's reference
+        expect new_datum.self_ref == make_output_ref(self.id, new_output_index)
+
+        // 7. All other fields must remain unchanged — no tampering
         expect new_datum.authority_key == old_datum.authority_key
         expect new_datum.operator_key == old_datum.operator_key
         expect new_datum.owner_key == old_datum.owner_key
@@ -193,9 +243,10 @@ validator archive_registry {
           signature,
         )
 
-        // 3. Find and validate the new master UTXO output
+        // 3. Find the new master UTXO output and its index
         let master_input = find_master_input(self.inputs, own_ref)
-        let new_output = find_master_output(self.outputs, master_input.address)
+        let (new_output, new_output_index) =
+          find_master_output_with_index(self.outputs, master_input.address)
         let new_datum = datum_from_output(new_output)
 
         // 4. Nonce must increment by exactly 1
@@ -204,7 +255,10 @@ validator archive_registry {
         // 5. is_paused must flip to True
         expect new_datum.is_paused == True
 
-        // 6. All other fields must remain unchanged
+        // 6. self_ref must be updated to point to the new output's reference
+        expect new_datum.self_ref == make_output_ref(self.id, new_output_index)
+
+        // 7. All other fields must remain unchanged
         expect new_datum.authority_key == old_datum.authority_key
         expect new_datum.operator_key == old_datum.operator_key
         expect new_datum.owner_key == old_datum.owner_key
@@ -232,9 +286,10 @@ validator archive_registry {
           signature,
         )
 
-        // 3. Find and validate the new master UTXO output
+        // 3. Find the new master UTXO output and its index
         let master_input = find_master_input(self.inputs, own_ref)
-        let new_output = find_master_output(self.outputs, master_input.address)
+        let (new_output, new_output_index) =
+          find_master_output_with_index(self.outputs, master_input.address)
         let new_datum = datum_from_output(new_output)
 
         // 4. Nonce must increment by exactly 1
@@ -243,7 +298,10 @@ validator archive_registry {
         // 5. is_paused must flip to False
         expect new_datum.is_paused == False
 
-        // 6. All other fields must remain unchanged
+        // 6. self_ref must be updated to point to the new output's reference
+        expect new_datum.self_ref == make_output_ref(self.id, new_output_index)
+
+        // 7. All other fields must remain unchanged
         expect new_datum.authority_key == old_datum.authority_key
         expect new_datum.operator_key == old_datum.operator_key
         expect new_datum.owner_key == old_datum.owner_key
@@ -274,9 +332,10 @@ validator archive_registry {
           signature,
         )
 
-        // 3. Find and validate the new master UTXO output
+        // 3. Find the new master UTXO output and its index
         let master_input = find_master_input(self.inputs, own_ref)
-        let new_output = find_master_output(self.outputs, master_input.address)
+        let (new_output, new_output_index) =
+          find_master_output_with_index(self.outputs, master_input.address)
         let new_datum = datum_from_output(new_output)
 
         // 4. Nonce must increment by exactly 1
@@ -294,7 +353,10 @@ validator archive_registry {
           )
         expect withdrawal_output == True
 
-        // 6. All datum fields must remain unchanged (withdraw doesn't alter state besides nonce)
+        // 6. self_ref must be updated to point to the new output's reference
+        expect new_datum.self_ref == make_output_ref(self.id, new_output_index)
+
+        // 7. All datum fields must remain unchanged (withdraw doesn't alter state besides nonce)
         expect new_datum.authority_key == old_datum.authority_key
         expect new_datum.operator_key == old_datum.operator_key
         expect new_datum.owner_key == old_datum.owner_key
@@ -337,9 +399,10 @@ validator archive_registry {
           signature,
         )
 
-        // 4. Find and validate the new master UTXO output
+        // 4. Find the new master UTXO output and its index
         let master_input = find_master_input(self.inputs, own_ref)
-        let new_output = find_master_output(self.outputs, master_input.address)
+        let (new_output, new_output_index) =
+          find_master_output_with_index(self.outputs, master_input.address)
         let new_datum = datum_from_output(new_output)
 
         // 5. Nonce must increment by exactly 1
@@ -364,7 +427,10 @@ validator archive_registry {
           }
         }
 
-        // 7. Remaining fields must always stay unchanged
+        // 7. self_ref must be updated to point to the new output's reference
+        expect new_datum.self_ref == make_output_ref(self.id, new_output_index)
+
+        // 8. Remaining fields must always stay unchanged
         expect new_datum.owner_address == old_datum.owner_address
         expect new_datum.is_paused == old_datum.is_paused
         expect new_datum.policy_id == old_datum.policy_id
@@ -408,9 +474,10 @@ validator archive_registry {
           signature,
         )
 
-        // 4. Find and validate the new master UTXO output
+        // 4. Find the new master UTXO output and its index
         let master_input = find_master_input(self.inputs, own_ref)
-        let new_output = find_master_output(self.outputs, master_input.address)
+        let (new_output, new_output_index) =
+          find_master_output_with_index(self.outputs, master_input.address)
         let new_datum = datum_from_output(new_output)
 
         // 5. Nonce must increment by exactly 1
@@ -425,7 +492,10 @@ validator archive_registry {
         expect link.signature == signature
         expect link.nonce_at_link == nonce
 
-        // 7. All other fields must remain unchanged
+        // 7. self_ref must be updated to point to the new output's reference
+        expect new_datum.self_ref == make_output_ref(self.id, new_output_index)
+
+        // 8. All other fields must remain unchanged
         expect new_datum.authority_key == old_datum.authority_key
         expect new_datum.operator_key == old_datum.operator_key
         expect new_datum.owner_key == old_datum.owner_key
@@ -448,7 +518,7 @@ validator archive_registry {
         expect quantity == 1
 
         // 2. Master UTXO must be present as an input in this transaction —
-        //    proves spend validator already enforced nonce/signature/pause
+        //    proves spend validator already enforced nonce/signature/pause/self_ref
         expect Some(master_input) =
           list.find(
             self.inputs,
