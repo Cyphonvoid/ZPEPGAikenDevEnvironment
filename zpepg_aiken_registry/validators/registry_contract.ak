@@ -1,7 +1,9 @@
 // validators/ArchiveRegistry.ak
+use cardano/assets
+use aiken/collection/dict
 use aiken/primitive/bytearray
 use aiken/crypto.{VerificationKey, Signature, verify_ed25519_signature}
-use cardano/address.{Address}
+use cardano/address.{Address, Credential, Script}
 use cardano/transaction.{
   OutputReference, Transaction, Input, Output, Datum, InlineDatum, NoDatum, DatumHash,
 }
@@ -127,6 +129,7 @@ fn datum_from_output(output: Output) -> MasterDatum {
 // ── Spend Validator ────────────────────────────────────────────────────
 
 validator archive_registry {
+
   spend(
     datum: Option<MasterDatum>,
     redeemer: RegistryAction,
@@ -179,7 +182,307 @@ validator archive_registry {
         True
       }
 
-      _ -> False
+      Pause { nonce, signature } -> {
+        // 1. Nonce must match current state exactly
+        expect nonce == old_datum.nonce
+
+        // 2. Signature must be valid for authority_key over (nonce, "PAUSE")
+        let signed_payload =
+          bytearray.concat(
+            bytearray.from_int_big_endian(nonce, 8),
+            "PAUSE",
+          )
+        expect verify_ed25519_signature(
+          old_datum.authority_key,
+          signed_payload,
+          signature,
+        )
+
+        // 3. Find and validate the new master UTXO output
+        let master_input = find_master_input(self.inputs, own_ref)
+        let new_output = find_master_output(self.outputs, master_input.address)
+        let new_datum = datum_from_output(new_output)
+
+        // 4. Nonce must increment by exactly 1
+        expect new_datum.nonce == old_datum.nonce + 1
+
+        // 5. is_paused must flip to True
+        expect new_datum.is_paused == True
+
+        // 6. All other fields must remain unchanged
+        expect new_datum.authority_key == old_datum.authority_key
+        expect new_datum.operator_key == old_datum.operator_key
+        expect new_datum.owner_key == old_datum.owner_key
+        expect new_datum.owner_address == old_datum.owner_address
+        expect new_datum.policy_id == old_datum.policy_id
+        expect new_datum.asset_name_prefix == old_datum.asset_name_prefix
+        expect new_datum.versions_utxo_ref == old_datum.versions_utxo_ref
+        expect new_datum.chain_link == old_datum.chain_link
+
+        True
+      }
+
+      Unpause { nonce, signature } -> {
+        // 1. Nonce must match current state exactly
+        expect nonce == old_datum.nonce
+
+        // 2. Signature must be valid for authority_key over (nonce, "UNPAUSE")
+        let signed_payload =
+          bytearray.concat(
+            bytearray.from_int_big_endian(nonce, 8),
+            "UNPAUSE",
+          )
+        expect verify_ed25519_signature(
+          old_datum.authority_key,
+          signed_payload,
+          signature,
+        )
+
+        // 3. Find and validate the new master UTXO output
+        let master_input = find_master_input(self.inputs, own_ref)
+        let new_output = find_master_output(self.outputs, master_input.address)
+        let new_datum = datum_from_output(new_output)
+
+        // 4. Nonce must increment by exactly 1
+        expect new_datum.nonce == old_datum.nonce + 1
+
+        // 5. is_paused must flip to False
+        expect new_datum.is_paused == False
+
+        // 6. All other fields must remain unchanged
+        expect new_datum.authority_key == old_datum.authority_key
+        expect new_datum.operator_key == old_datum.operator_key
+        expect new_datum.owner_key == old_datum.owner_key
+        expect new_datum.owner_address == old_datum.owner_address
+        expect new_datum.policy_id == old_datum.policy_id
+        expect new_datum.asset_name_prefix == old_datum.asset_name_prefix
+        expect new_datum.versions_utxo_ref == old_datum.versions_utxo_ref
+        expect new_datum.chain_link == old_datum.chain_link
+
+        True
+      }
+
+      Withdraw { nonce, amount, signature } -> {
+        // 1. Nonce must match current state exactly
+        expect nonce == old_datum.nonce
+
+        // 2. Signature must be valid for owner_key over (nonce, "WITHDRAW", amount)
+        let signed_payload =
+          bytearray.concat(
+            bytearray.concat(
+              bytearray.from_int_big_endian(nonce, 8),
+              "WITHDRAW",
+            ),
+            bytearray.from_int_big_endian(amount, 8),
+          )
+        expect verify_ed25519_signature(
+          old_datum.owner_key,
+          signed_payload,
+          signature,
+        )
+
+        // 3. Find and validate the new master UTXO output
+        let master_input = find_master_input(self.inputs, own_ref)
+        let new_output = find_master_output(self.outputs, master_input.address)
+        let new_datum = datum_from_output(new_output)
+
+        // 4. Nonce must increment by exactly 1
+        expect new_datum.nonce == old_datum.nonce + 1
+
+        // 5. The withdrawn amount must actually go to owner_address
+        let withdrawal_output =
+          list.any(
+            self.outputs,
+            fn(o) {
+              o.address == old_datum.owner_address && assets.lovelace_of(
+                o.value,
+              ) == amount
+            },
+          )
+        expect withdrawal_output == True
+
+        // 6. All datum fields must remain unchanged (withdraw doesn't alter state besides nonce)
+        expect new_datum.authority_key == old_datum.authority_key
+        expect new_datum.operator_key == old_datum.operator_key
+        expect new_datum.owner_key == old_datum.owner_key
+        expect new_datum.owner_address == old_datum.owner_address
+        expect new_datum.is_paused == old_datum.is_paused
+        expect new_datum.policy_id == old_datum.policy_id
+        expect new_datum.asset_name_prefix == old_datum.asset_name_prefix
+        expect new_datum.versions_utxo_ref == old_datum.versions_utxo_ref
+        expect new_datum.chain_link == old_datum.chain_link
+
+        True
+      }
+
+      RotateKey { nonce, key_type, new_key, signature } -> {
+        // 1. Nonce must match current state exactly
+        expect nonce == old_datum.nonce
+
+        // 2. Build a byte tag for which key type is being rotated, for the signed payload
+        let key_type_tag =
+          when key_type is {
+            AuthorityKey -> "AUTHORITY"
+            OperatorKey -> "OPERATOR"
+            OwnerKey -> "OWNER"
+          }
+
+        // 3. Signature must be valid for authority_key over (nonce, "ROTATE", key_type_tag, new_key)
+        let signed_payload =
+          bytearray.concat(
+            bytearray.concat(
+              bytearray.concat(
+                bytearray.from_int_big_endian(nonce, 8),
+                "ROTATE",
+              ),
+              key_type_tag,
+            ),
+            new_key,
+          )
+        expect verify_ed25519_signature(
+          old_datum.authority_key,
+          signed_payload,
+          signature,
+        )
+
+        // 4. Find and validate the new master UTXO output
+        let master_input = find_master_input(self.inputs, own_ref)
+        let new_output = find_master_output(self.outputs, master_input.address)
+        let new_datum = datum_from_output(new_output)
+
+        // 5. Nonce must increment by exactly 1
+        expect new_datum.nonce == old_datum.nonce + 1
+
+        // 6. Exactly the targeted key field changes to new_key; all others stay identical
+        when key_type is {
+          AuthorityKey -> {
+            expect new_datum.authority_key == new_key
+            expect new_datum.operator_key == old_datum.operator_key
+            expect new_datum.owner_key == old_datum.owner_key
+          }
+          OperatorKey -> {
+            expect new_datum.authority_key == old_datum.authority_key
+            expect new_datum.operator_key == new_key
+            expect new_datum.owner_key == old_datum.owner_key
+          }
+          OwnerKey -> {
+            expect new_datum.authority_key == old_datum.authority_key
+            expect new_datum.operator_key == old_datum.operator_key
+            expect new_datum.owner_key == new_key
+          }
+        }
+
+        // 7. Remaining fields must always stay unchanged
+        expect new_datum.owner_address == old_datum.owner_address
+        expect new_datum.is_paused == old_datum.is_paused
+        expect new_datum.policy_id == old_datum.policy_id
+        expect new_datum.asset_name_prefix == old_datum.asset_name_prefix
+        expect new_datum.versions_utxo_ref == old_datum.versions_utxo_ref
+        expect new_datum.chain_link == old_datum.chain_link
+
+        True
+      }
+
+      LinkDeployment {
+        nonce,
+        next_script_address,
+        next_policy_id,
+        next_authority_key,
+        link_reason,
+        signature,
+      } -> {
+        // 1. Nonce must match current state exactly
+        expect nonce == old_datum.nonce
+
+        // 2. A deployment chain link can only be created once per deployment —
+        //    this deployment must not already have linked forward
+        expect old_datum.chain_link == None
+
+        // 3. Signature must be valid for authority_key over a payload binding
+        //    the next deployment's full identity plus the nonce
+        let signed_payload =
+          bytearray.concat(
+            bytearray.concat(
+              bytearray.concat(
+                bytearray.from_int_big_endian(nonce, 8),
+                next_policy_id,
+              ),
+              next_script_address,
+            ),
+            next_authority_key,
+          )
+        expect verify_ed25519_signature(
+          old_datum.authority_key,
+          signed_payload,
+          signature,
+        )
+
+        // 4. Find and validate the new master UTXO output
+        let master_input = find_master_input(self.inputs, own_ref)
+        let new_output = find_master_output(self.outputs, master_input.address)
+        let new_datum = datum_from_output(new_output)
+
+        // 5. Nonce must increment by exactly 1
+        expect new_datum.nonce == old_datum.nonce + 1
+
+        // 6. The new datum's chain_link must contain the correct pointer and proof
+        expect Some(link) = new_datum.chain_link
+        expect link.next_script_address == next_script_address
+        expect link.next_policy_id == next_policy_id
+        expect link.link_reason == link_reason
+        expect link.current_authority_key == old_datum.authority_key
+        expect link.signature == signature
+        expect link.nonce_at_link == nonce
+
+        // 7. All other fields must remain unchanged
+        expect new_datum.authority_key == old_datum.authority_key
+        expect new_datum.operator_key == old_datum.operator_key
+        expect new_datum.owner_key == old_datum.owner_key
+        expect new_datum.owner_address == old_datum.owner_address
+        expect new_datum.is_paused == old_datum.is_paused
+        expect new_datum.policy_id == old_datum.policy_id
+        expect new_datum.asset_name_prefix == old_datum.asset_name_prefix
+        expect new_datum.versions_utxo_ref == old_datum.versions_utxo_ref
+
+        True
+      }
+
+    }
+  }
+
+  
+  mint(redeemer: MintAction, policy_id: ByteArray, self: Transaction) {
+    when redeemer is {
+      Mint -> {
+        // 1. Exactly one token must be minted under this policy
+        let minted_assets = assets.tokens(self.mint, policy_id)
+        expect [Pair(asset_name, quantity)] = dict.to_pairs(minted_assets)
+        expect quantity == 1
+
+        // 2. Master UTXO must be present as an input in this transaction —
+        //    proves spend validator already enforced nonce/signature/pause
+        expect Some(master_input) =
+          list.find(
+            self.inputs,
+            fn(i) { i.output.address.payment_credential == Script(policy_id) },
+          )
+
+        // 3. The master UTXO's datum must be a valid MasterDatum we can read
+        expect InlineDatum(datum_data) = master_input.output.datum
+        expect master_datum: MasterDatum = datum_data
+
+        // 4. Asset name must match our naming scheme prefix
+        let prefix = master_datum.asset_name_prefix
+        let prefix_len = bytearray.length(prefix)
+        expect bytearray.take(asset_name, prefix_len) == prefix
+
+        True
+      }
+
+      Burn -> {
+        // Burning is not yet supported — explicitly disallowed for now
+        False
+      }
     }
   }
 }
