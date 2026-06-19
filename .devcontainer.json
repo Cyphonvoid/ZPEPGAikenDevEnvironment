@@ -6,13 +6,14 @@
   "customizations": {
     "vscode": {
       "extensions": [
-        "aiken-lang.aiken" // Automatically installs the Aiken extension
+        "aiken-lang.aiken", // Automatically installs the Aiken extension
+        "ms-python.python"   // RECOMMENDED: Adds Python syntax and terminal support to VS Code
       ]
     }
   },
 
-  // Runs commands to install aikup and aiken after the container is created
-  "postCreateCommand": "curl -sSfL https://install.aiken-lang.org | bash && export PATH=\"$HOME/.aiken/bin:$PATH\" && aikup",
+  // Installs system dependencies, then installs aikup and aiken
+  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y python3 python3-pip python-is-python3 && curl -sSfL https://install.aiken-lang.org | bash && export PATH=\"$HOME/.aiken/bin:$PATH\" && aikup",
 
   // Ensures the aiken path is always available in the terminal sessions
   "remoteEnv": {
