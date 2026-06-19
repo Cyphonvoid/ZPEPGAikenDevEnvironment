@@ -1,1 +1,4 @@
 # ZPEPGAikenDevEnvironment
+
+Policy ID: a6b1026475984480de036b62346b52af93dc2b9988bcb6c2eb60524c
+Script Address: addr_test1wzntzqnywkvyfqx7qd4kydrt22he8hptnxytedkzads9ynqq838ad

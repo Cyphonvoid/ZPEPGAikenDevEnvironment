@@ -1,0 +1,6 @@
+1781836533585:default-addresses
+1781836894201:clear
+1781836906347:sudo kill -9 $(sudo lsof -t -i:3001 -i:8080 -i:8090) 2>/dev/null || echo "Ports cleared!"
+1781837168243:exit
+1781837177929:yaci-devkit down
+1781837182915:exit
