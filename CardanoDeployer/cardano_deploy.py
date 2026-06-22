@@ -289,7 +289,9 @@ def run_deployment(
         blueprint_output_path=args.output_blueprint,
     )
     try:
-        written = DeploymentRecord.write(record, args.deployment_json, allow_overwrite=args.overwrite)
+        #written = DeploymentRecord.write(record, args.deployment_json, allow_overwrite=args.overwrite)
+        written = DeploymentRecord.write(record, args.deployment_json, allow_overwrite=True)
+
     except DeploymentRecord.Error as e:
         raise CLI.Error(str(e)) from e
 

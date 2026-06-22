@@ -687,7 +687,7 @@ class DeploymentRecord:
         cls,
         record: "DeploymentRecord.Record",
         output_path: str | Path,
-        allow_overwrite: bool = False,
+        allow_overwrite: bool = True,
     ) -> Path:
         output_path = Path(output_path)
         if output_path.exists() and not allow_overwrite:
