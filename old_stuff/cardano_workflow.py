@@ -9,7 +9,6 @@ prompting, or CLI argument parsing - that lives in cardano_deploy.py.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import shutil
 import subprocess
@@ -18,8 +17,6 @@ from datetime import datetime, timezone
 from fractions import Fraction
 from pathlib import Path
 from typing import Union
-
-import bech32
 
 from pycardano import (
     Address, Asset, AssetName, MultiAsset, Network,
@@ -445,20 +442,9 @@ class GenesisTransaction:
                 )
                 multi_asset = MultiAsset({})
                 if u.assets:
-                    # NOTE: unit strings from the provider have NO separator
-                    # between policy_id and asset_name (confirmed against
-                    # real devnet data, e.g.
-                    # "882e60dbd5e0642cb31263c0ed504dc341e97314549ea400fdcec6ce5a504550472d424541434f4e2d54455354").
-                    # policy_id is always exactly 56 hex chars (28 bytes);
-                    # everything after that is the asset_name. A prior
-                    # version of this code incorrectly used
-                    # asset.unit.partition(".") which silently produced
-                    # wrong results since no "." is ever present.
-                    POLICY_ID_HEX_LEN = 56
                     grouped: dict[bytes, dict[bytes, int]] = {}
                     for asset in u.assets:
-                        policy_hex = asset.unit[:POLICY_ID_HEX_LEN]
-                        name_hex = asset.unit[POLICY_ID_HEX_LEN:]
+                        policy_hex, _, name_hex = asset.unit.partition(".")
                         p = bytes.fromhex(policy_hex)
                         n = bytes.fromhex(name_hex) if name_hex else b""
                         grouped.setdefault(p, {})[n] = asset.quantity
@@ -635,72 +621,6 @@ class GenesisTransaction:
 # ═══════════════════════════════════════════════════════════════════════════
 # DeploymentRecord - writes deployment.json
 # ═══════════════════════════════════════════════════════════════════════════
-#
-# deployment.json structure (confirmed/agreed):
-#
-# {
-#   "network": ...,
-#   "timestamp_utc": ...,
-#   "deployed_from_wallet_address": ...,
-#   "transaction_hash": ...,              <- the genesis bootstrap tx itself
-#   "genesis_transaction_hash": ...,      <- the UTXO consumed as beacon_policy's parameter
-#
-#   "registry_contract": { policy_id, script_address, bootstrap_generated_plutus_path },
-#
-#   "beacon_contract": { policy_id, genesis_tx_hash, genesis_output_index,
-#                         asset_name_hex, asset_name_utf8 },
-#
-#   "master_utxo": {
-#       utxo_ref, transaction_hash, output_index, script_address,
-#       "beacon_token": { policy_id, asset_name_hex, asset_name_utf8,
-#                          token_id, asset_fingerprint }
-#   },
-#
-#   "permission_keys": { authority_key, operator_key, owner_key }
-# }
-#
-# Repetition across sections (e.g. beacon policy_id appearing in both
-# beacon_contract and master_utxo.beacon_token) is intentional - each
-# section should be independently readable without cross-referencing
-# others.
-#
-# asset_fingerprint (CIP-14) is verified against all 5 official test
-# vectors in test_cardano_fingerprint.py before being trusted here. If
-# fingerprint computation ever fails for an unexpected reason, it degrades
-# to None rather than blocking the write of an already-confirmed,
-# on-chain-successful deployment record - it's a cosmetic/display field,
-# not load-bearing for anything downstream.
-
-# asset_fingerprint (CIP-14) is verified against all 5 official test
-# vectors before being trusted here. If fingerprint computation ever fails
-# for an unexpected reason, it degrades to None rather than blocking the
-# write of an already-confirmed, on-chain-successful deployment record -
-# it's a cosmetic/display field, not load-bearing for anything downstream.
-#
-# Verified against the 5 official CIP-14 test vectors
-# (https://cips.cardano.org/cip/CIP-14) at the time this was written:
-#   7eae28af2208be856f7a119668ae52a49b73725e326dc16579dcc373 + ""
-#       -> asset1rjklcrnsdzqp65wjgrg55sy9723kw09mlgvlc3
-#   7eae28af2208be856f7a119668ae52a49b73725e326dc16579dcc37e + ""
-#       -> asset1nl0puwxmhas8fawxp8nx4e2q3wekg969n2auw3
-#   1e349c9bdea19fd6c147626a5260bc44b71635f398b67c59881df209 + ""
-#       -> asset1uyuxku60yqe57nusqzjx38aan3f2wq6s93f6ea
-#   7eae28af2208be856f7a119668ae52a49b73725e326dc16579dcc373 + 504154415445
-#       -> asset13n25uv0yaf5kus35fm2k86cqy60z58d9xmde92
-#   1e349c9bdea19fd6c147626a5260bc44b71635f398b67c59881df209 + 504154415445
-#       -> asset1hv4p5tv2a837mzqrst04d0dcptdjmluqvdx9k3
-# All 5 passed exactly.
-
-def _asset_fingerprint(policy_id: bytes, asset_name: bytes) -> str:
-    """
-    CIP-14 user-facing asset fingerprint: bech32-encoded blake2b-160 digest
-    of the concatenation of RAW (decoded) policy_id and asset_name bytes -
-    per spec, hex string forms must not be used for the digest input.
-    """
-    digest = hashlib.blake2b(policy_id + asset_name, digest_size=20).digest()
-    words = bech32.convertbits(digest, 8, 5)
-    return bech32.bech32_encode("asset", words)
-
 
 class DeploymentRecord:
     """
@@ -715,13 +635,17 @@ class DeploymentRecord:
     class Record:
         network: str
         timestamp_utc: str
-        deployed_from_wallet_address: str
-        transaction_hash: str
-        genesis_transaction_hash: str
-        registry_contract: dict
-        beacon_contract: dict
-        master_utxo: dict
+        deployer_address: str
+        genesis_tx_hash: str
+        genesis_output_index: int
+        beacon_policy_id: str
+        beacon_asset_name_hex: str
+        beacon_asset_name_utf8: str | None
+        registry_policy_id: str
+        registry_script_address: str
+        master_utxo_ref: str
         permission_keys: dict
+        bootstrap_generated_plutus_path: str
 
         def to_dict(self) -> dict:
             return asdict(self)
@@ -742,58 +666,20 @@ class DeploymentRecord:
         except UnicodeDecodeError:
             asset_name_utf8 = None
 
-        beacon_policy_id_bytes = bytes.fromhex(tx_result.beacon_policy_id_hex)
-        token_id = tx_result.beacon_policy_id_hex + beacon_asset_name.hex()
-
-        try:
-            fingerprint = _asset_fingerprint(beacon_policy_id_bytes, beacon_asset_name)
-        except Exception:
-            # Cosmetic field only - see module-level note above. Never let
-            # a fingerprint computation issue block writing the rest of an
-            # already-confirmed, on-chain-successful deployment record.
-            fingerprint = None
-
-        # tx_result.master_utxo_ref is "{tx_hash}#{index}"
-        master_tx_hash, _, master_index_str = tx_result.master_utxo_ref.partition("#")
-
-        registry_contract = {
-            "policy_id": tx_result.registry_policy_id_hex,
-            "script_address": tx_result.registry_script_address,
-            "bootstrap_generated_plutus_path": str(blueprint_output_path),
-        }
-
-        beacon_contract = {
-            "policy_id": tx_result.beacon_policy_id_hex,
-            "genesis_tx_hash": genesis_utxo.tx_hash,
-            "genesis_output_index": genesis_utxo.output_index,
-            "asset_name_hex": tx_result.beacon_asset_name_hex,
-            "asset_name_utf8": asset_name_utf8,
-        }
-
-        master_utxo = {
-            "utxo_ref": tx_result.master_utxo_ref,
-            "transaction_hash": master_tx_hash,
-            "output_index": int(master_index_str),
-            "script_address": tx_result.registry_script_address,
-            "beacon_token": {
-                "policy_id": tx_result.beacon_policy_id_hex,
-                "asset_name_hex": tx_result.beacon_asset_name_hex,
-                "asset_name_utf8": asset_name_utf8,
-                "token_id": token_id,
-                "asset_fingerprint": fingerprint,
-            },
-        }
-
         return DeploymentRecord.Record(
             network=network.name,
             timestamp_utc=datetime.now(timezone.utc).isoformat(),
-            deployed_from_wallet_address=str(funding_account.address),
-            transaction_hash=master_tx_hash,
-            genesis_transaction_hash=genesis_utxo.tx_hash,
-            registry_contract=registry_contract,
-            beacon_contract=beacon_contract,
-            master_utxo=master_utxo,
+            deployer_address=str(funding_account.address),
+            genesis_tx_hash=genesis_utxo.tx_hash,
+            genesis_output_index=genesis_utxo.output_index,
+            beacon_policy_id=tx_result.beacon_policy_id_hex,
+            beacon_asset_name_hex=tx_result.beacon_asset_name_hex,
+            beacon_asset_name_utf8=asset_name_utf8,
+            registry_policy_id=tx_result.registry_policy_id_hex,
+            registry_script_address=tx_result.registry_script_address,
+            master_utxo_ref=tx_result.master_utxo_ref,
             permission_keys=perm_keys.as_dict(),
+            bootstrap_generated_plutus_path=str(blueprint_output_path),
         )
 
     @classmethod

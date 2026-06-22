@@ -1,19 +1,37 @@
 {
   "network": "TESTNET",
-  "timestamp_utc": "2026-06-22T04:57:51.434921+00:00",
-  "deployer_address": "addr_test1qrh3nrahcd0pj6ps3g9htnlw2jjxuylgdhfn2s5rxqyrr43yzewr2766qsfeq6stl65t546cwvclpqm2rpkkxtksgxuq90xn5f",
-  "genesis_tx_hash": "d77d4dc13ed7b2ac1372c0b0745e65d039bb22cd9c8b0e0d00ef773960e8d27d",
-  "genesis_output_index": 1,
-  "beacon_policy_id": "0bc8f975e92143325c450c531ddac54a0327e32da5a9615c665da753",
-  "beacon_asset_name_hex": "5a504550472d424541434f4e2d54455354",
-  "beacon_asset_name_utf8": "ZPEPG-BEACON-TEST",
-  "registry_policy_id": "8f97815ed05359a6901fa717b5531b5ddc0c6b892bc21c7aae3aca49",
-  "registry_script_address": "addr_test1wz8e0q276pf4nf5sr7n30d2nrdwacrrt3y4uy8r64cav5jgrdwm07",
-  "master_utxo_ref": "b2dc905092af9e8651281eaec6e1a67b336858b2726510d42a3200ed75a39c2b#0",
+  "timestamp_utc": "2026-06-22T08:38:34.823383+00:00",
+  "deployed_from_wallet_address": "addr_test1qrh3nrahcd0pj6ps3g9htnlw2jjxuylgdhfn2s5rxqyrr43yzewr2766qsfeq6stl65t546cwvclpqm2rpkkxtksgxuq90xn5f",
+  "transaction_hash": "3f1daa0980893ba37cc3b16ecd6168de5c99dea73f55964d096aa9f78357f239",
+  "genesis_transaction_hash": "a6ce90a9a5ef8ef73858effdae375ba50f302d3c6c8b587a15eaa8fa98ddf741",
+  "registry_contract": {
+    "policy_id": "8f97815ed05359a6901fa717b5531b5ddc0c6b892bc21c7aae3aca49",
+    "script_address": "addr_test1wz8e0q276pf4nf5sr7n30d2nrdwacrrt3y4uy8r64cav5jgrdwm07",
+    "bootstrap_generated_plutus_path": "bootstrap_generated_plutus.json"
+  },
+  "beacon_contract": {
+    "policy_id": "1a7117ebbe3eb51606898b4fa60337a654e2e046952cec0968a0f5d5",
+    "genesis_tx_hash": "a6ce90a9a5ef8ef73858effdae375ba50f302d3c6c8b587a15eaa8fa98ddf741",
+    "genesis_output_index": 0,
+    "asset_name_hex": "5a504550472d424541434f4e2d54455354",
+    "asset_name_utf8": "ZPEPG-BEACON-TEST"
+  },
+  "master_utxo": {
+    "utxo_ref": "3f1daa0980893ba37cc3b16ecd6168de5c99dea73f55964d096aa9f78357f239#0",
+    "transaction_hash": "3f1daa0980893ba37cc3b16ecd6168de5c99dea73f55964d096aa9f78357f239",
+    "output_index": 0,
+    "script_address": "addr_test1wz8e0q276pf4nf5sr7n30d2nrdwacrrt3y4uy8r64cav5jgrdwm07",
+    "beacon_token": {
+      "policy_id": "1a7117ebbe3eb51606898b4fa60337a654e2e046952cec0968a0f5d5",
+      "asset_name_hex": "5a504550472d424541434f4e2d54455354",
+      "asset_name_utf8": "ZPEPG-BEACON-TEST",
+      "token_id": "1a7117ebbe3eb51606898b4fa60337a654e2e046952cec0968a0f5d55a504550472d424541434f4e2d54455354",
+      "asset_fingerprint": "asset1raxd3uhvrd4x5kv9ecvudv63jlk9jn77q2ac3m"
+    }
+  },
   "permission_keys": {
     "authority_key": "aa3edc38bd2386f9a6bdd3bf633dea7e2045c85476a8d445f0c3fc35ffa42f6a",
     "operator_key": "fa2051685c04478e1d351194e3303727c087a6498d6cf4f3050d37ba76f0edc8",
     "owner_key": "186855b264674f7aa1e9a8c3155493384486e0cead1c5c3453551e0f0afc6b49"
-  },
-  "bootstrap_generated_plutus_path": "bootstrap_generated_plutus.json"
+  }
 }
