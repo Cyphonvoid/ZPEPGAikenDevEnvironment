@@ -5,6 +5,19 @@ All classes here are namespace classes (no instantiation needed) except
 where a real instance is necessary. Each class owns its own constants,
 error types, and logic. Nothing in this file does input-gathering,
 prompting, or CLI argument parsing - that lives in cardano_deploy.py.
+
+SINGLE-SCRIPT ARCHITECTURE: this version replaces the prior two-stage
+deployment (compile beacon_contract.ak first, learn its policy ID, THEN
+compile registry_contract.ak parameterized by that policy ID) with a
+single compiled artifact. registry_contract.ak's `validator
+archive_registry(genesis_ref: OutputReference, beacon_asset_name:
+ByteArray)` is parameterized directly by the genesis UTXO and the chosen
+beacon asset name, and its `mint` entrypoint's MintBeacon redeemer
+performs what beacon_contract.ak used to do standalone. Since spend and
+mint are both declared inside the same validator block, they compile to
+ONE shared script hash - there is now exactly one policy ID for the
+entire deployment, used as both the registry's script address and the
+beacon's minting policy.
 """
 
 from __future__ import annotations
@@ -20,6 +33,7 @@ from pathlib import Path
 from typing import Union
 
 import bech32
+import cbor2
 
 from pycardano import (
     Address, Asset, AssetName, MultiAsset, Network,
@@ -33,17 +47,29 @@ from pycardano.backend.base import ChainContext
 from pycardano.plutus import ExecutionUnits
 
 
-from CardanoDeployer.cardano_types import (
-    AikenFalse, InlineStakeCredential, MasterDatum, MintBeacon,
-    NoneChainLink, OutputReference, PlutusAddress, RegistryStats,
-    SomeStakeCredential, VerificationKeyCredential,
-)
-from CardanoDeployer.cardano_network import NetworkBackend, NetworkError, UtxoInfo
+try:
+    from CardanoDeployer.cardano_types import (
+        AikenFalse, InlineStakeCredential, MasterDatum, MintBeacon,
+        NoneChainLink, OutputReference, PlutusAddress, RegistryStats,
+        SomeStakeCredential, VerificationKeyCredential,
+    )
+    from CardanoDeployer.cardano_network import NetworkBackend, NetworkError, UtxoInfo
 
+except ImportError:
+    # For local dev/test runs where the package isn't installed yet
+    from cardano_types import (
+        AikenFalse, InlineStakeCredential, MasterDatum, MintBeacon,
+        NoneChainLink, OutputReference, PlutusAddress, RegistryStats,
+        SomeStakeCredential, VerificationKeyCredential,
+    )
+    from cardano_network import NetworkBackend, NetworkError, UtxoInfo
 
+    
 # ═══════════════════════════════════════════════════════════════════════════
 # Wallet - mnemonic derivation, address scanning and verification
 # ═══════════════════════════════════════════════════════════════════════════
+# UNCHANGED from the two-script version - wallet derivation has no
+# dependency on contract architecture.
 
 class Wallet:
     """
@@ -142,6 +168,7 @@ class Wallet:
 # ═══════════════════════════════════════════════════════════════════════════
 # PermKeys - permission key set loading from perm_keys.json
 # ═══════════════════════════════════════════════════════════════════════════
+# UNCHANGED from the two-script version.
 
 class PermKeys:
     """
@@ -251,7 +278,7 @@ class PermKeys:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# AikenBlueprint - beacon_policy parameterization via aiken CLI
+# AikenBlueprint - single-script two-parameter application via aiken CLI
 # ═══════════════════════════════════════════════════════════════════════════
 
 class AikenBlueprint:
@@ -262,20 +289,41 @@ class AikenBlueprint:
     application in Python - the CLI is the reference implementation and
     is already confirmed working manually. Any reimplementation risks
     subtly wrong UPLC application that silently binds to the wrong UTXO.
+
+    `aiken blueprint apply` applies exactly ONE parameter per invocation,
+    in the validator's declared parameter order. archive_registry now
+    declares TWO parameters - `validator archive_registry(genesis_ref:
+    OutputReference, beacon_asset_name: ByteArray)` - so this requires two
+    sequential calls: apply genesis_ref to the raw blueprint, then apply
+    beacon_asset_name to THAT output, producing the final fully-applied
+    blueprint.
+
+    CAVEAT (unverified against a live aiken invocation - confirm before
+    trusting in a real deployment): genesis_ref's CBOR encoding was
+    already confirmed working in the prior two-script version (it's a
+    PlutusData record, encoded via OutputReference.to_cbor_hex()).
+    beacon_asset_name's CBOR encoding here uses cbor2.dumps() directly on
+    the raw bytes, which is the correct CBOR major-type-2 bytestring
+    encoding for a Plutus Data ByteArray value - but this specific
+    parameter-application path (a bare ByteArray, not a PlutusData record)
+    hasn't been exercised against the actual aiken CLI yet in this
+    project. Run `aiken blueprint apply --help` and a manual test apply
+    against a throwaway blueprint to confirm before relying on this in a
+    real deployment.
     """
 
-    BEACON_MODULE    = "beacon_contract"
-    BEACON_VALIDATOR = "beacon_policy"
-    BEACON_TITLE     = "beacon_contract.beacon_policy.mint"
-    REGISTRY_TITLE   = "registry_contract.archive_registry.spend"
+    MODULE    = "registry_contract"
+    VALIDATOR = "archive_registry"
+    SPEND_TITLE = "registry_contract.archive_registry.spend"
+    MINT_TITLE  = "registry_contract.archive_registry.mint"
 
     class Error(Exception):
         pass
 
     @dataclass(frozen=True)
-    class AppliedBeacon:
-        beacon_policy_id_hex: str
-        compiled_code_hex: str
+    class AppliedScript:
+        policy_id_hex: str          # shared by spend address AND beacon/registry minting policy
+        compiled_code_hex: str      # identical for both spend and mint entries - same combined script
         blueprint_path: Path
 
     @classmethod
@@ -293,32 +341,19 @@ class AikenBlueprint:
         return next((v for v in blueprint.get("validators", []) if v.get("title") == title), None)
 
     @classmethod
-    def apply_beacon_parameter(
-        cls,
-        genesis_ref: OutputReference,
-        source_blueprint_path: str | Path,
-        output_blueprint_path: str | Path,
-    ) -> "AikenBlueprint.AppliedBeacon":
-        aiken = cls._require_aiken()
-        source = Path(source_blueprint_path)
-        output = Path(output_blueprint_path)
-
-        if not source.exists():
-            raise AikenBlueprint.Error(f"Source blueprint not found: {source}")
-
+    def _run_apply(cls, aiken: str, source: Path, output: Path, param_cbor_hex: str) -> None:
         cmd = [
             aiken, "blueprint", "apply",
-            "-m", cls.BEACON_MODULE,
-            "-v", cls.BEACON_VALIDATOR,
+            "-m", cls.MODULE,
+            "-v", cls.VALIDATOR,
             "-i", str(source),
             "-o", str(output),
-            genesis_ref.to_cbor_hex(),
+            param_cbor_hex,
         ]
-
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
         except subprocess.TimeoutExpired as e:
-            raise AikenBlueprint.Error(f"`aiken blueprint apply` timed out.") from e
+            raise AikenBlueprint.Error("`aiken blueprint apply` timed out.") from e
         except OSError as e:
             raise AikenBlueprint.Error(f"Failed to invoke aiken: {e}") from e
 
@@ -327,48 +362,69 @@ class AikenBlueprint:
                 f"`aiken blueprint apply` failed (exit {result.returncode}).\n"
                 f"stdout: {result.stdout}\nstderr: {result.stderr}"
             )
-
         if not output.exists():
             raise AikenBlueprint.Error(
                 f"`aiken blueprint apply` succeeded but output file not found: {output}"
             )
+
+    @classmethod
+    def apply_parameters(
+        cls,
+        genesis_ref: OutputReference,
+        beacon_asset_name: bytes,
+        source_blueprint_path: str | Path,
+        output_blueprint_path: str | Path,
+    ) -> "AikenBlueprint.AppliedScript":
+        aiken = cls._require_aiken()
+        source = Path(source_blueprint_path)
+        output = Path(output_blueprint_path)
+
+        if not source.exists():
+            raise AikenBlueprint.Error(f"Source blueprint not found: {source}")
+
+        intermediate = output.with_suffix(output.suffix + ".step1")
+
+        # Step 1: apply genesis_ref (first declared parameter)
+        cls._run_apply(aiken, source, intermediate, genesis_ref.to_cbor_hex())
+
+        # Step 2: apply beacon_asset_name (second declared parameter),
+        # against step 1's output, producing the final blueprint.
+        beacon_asset_name_cbor_hex = cbor2.dumps(beacon_asset_name).hex()
+        cls._run_apply(aiken, intermediate, output, beacon_asset_name_cbor_hex)
+
+        try:
+            intermediate.unlink()
+        except OSError:
+            pass  # cosmetic cleanup only, not load-bearing
 
         try:
             blueprint = json.loads(output.read_text())
         except json.JSONDecodeError as e:
             raise AikenBlueprint.Error(f"Output blueprint is not valid JSON: {e}") from e
 
-        validator = cls._find_validator(blueprint, cls.BEACON_TITLE)
-        if validator is None:
+        spend_validator = cls._find_validator(blueprint, cls.SPEND_TITLE)
+        mint_validator = cls._find_validator(blueprint, cls.MINT_TITLE)
+        if spend_validator is None or mint_validator is None:
             available = [v.get("title") for v in blueprint.get("validators", [])]
             raise AikenBlueprint.Error(
-                f"'{cls.BEACON_TITLE}' not found in output blueprint. "
-                f"Available: {available}"
+                f"Expected both '{cls.SPEND_TITLE}' and '{cls.MINT_TITLE}' in output "
+                f"blueprint. Available: {available}"
+            )
+        if spend_validator["hash"] != mint_validator["hash"]:
+            # Should be structurally impossible (same validator block, same
+            # compiled script) - if this ever fires, something is deeply
+            # wrong with the apply sequence or the source blueprint.
+            raise AikenBlueprint.Error(
+                f"spend hash ({spend_validator['hash']}) and mint hash "
+                f"({mint_validator['hash']}) differ after parameter application - "
+                f"expected identical, since both purposes share one compiled script."
             )
 
-        return AikenBlueprint.AppliedBeacon(
-            beacon_policy_id_hex=validator["hash"],
-            compiled_code_hex=validator["compiledCode"],
+        return AikenBlueprint.AppliedScript(
+            policy_id_hex=spend_validator["hash"],
+            compiled_code_hex=spend_validator["compiledCode"],
             blueprint_path=output,
         )
-
-    @classmethod
-    def load_registry_validator(cls, blueprint_path: str | Path) -> dict:
-        path = Path(blueprint_path)
-        if not path.exists():
-            raise AikenBlueprint.Error(f"Blueprint not found: {path}")
-        try:
-            blueprint = json.loads(path.read_text())
-        except json.JSONDecodeError as e:
-            raise AikenBlueprint.Error(f"Blueprint is not valid JSON: {e}") from e
-
-        validator = cls._find_validator(blueprint, cls.REGISTRY_TITLE)
-        if validator is None:
-            available = [v.get("title") for v in blueprint.get("validators", [])]
-            raise AikenBlueprint.Error(
-                f"'{cls.REGISTRY_TITLE}' not found in blueprint. Available: {available}"
-            )
-        return validator
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -380,6 +436,16 @@ class GenesisTransaction:
     Namespace for building and submitting the one-time genesis bootstrap
     transaction. Owns a minimal ChainContext subclass backed by NetworkBackend
     rather than using pccontext (which has confirmed bugs in this project).
+
+    SIMPLIFIED (single-script): genesis is now ONE step instead of two
+    coordinated stages. Spend genesis_ref (a normal wallet-key-locked
+    UTXO - its owner's signature on that input IS the authorization, no
+    separate authority-key signature is needed for the one-shot beacon
+    mint itself), mint the beacon under this script's own policy via the
+    MintBeacon redeemer, and send the resulting output directly to this
+    script's own address carrying the initial MasterDatum. The spend
+    validator is never invoked during genesis, since nothing is being
+    spent FROM the script yet at this point - only mint() fires.
     """
 
     MASTER_UTXO_LOVELACE = 3_000_000  # confirmed sufficient on-chain
@@ -393,11 +459,11 @@ class GenesisTransaction:
         tx_id: str
         master_utxo_ref: str
         registry_script_address: str
-        registry_policy_id_hex: str
-        beacon_policy_id_hex: str
+        policy_id_hex: str           # shared: registry's own policy AND beacon's policy
         beacon_asset_name_hex: str
 
     # ── Minimal ChainContext backed by NetworkBackend ──────────────────────
+    # UNCHANGED from the two-script version.
 
     class _ProviderContext(ChainContext):
         """
@@ -448,13 +514,9 @@ class GenesisTransaction:
                 if u.assets:
                     # NOTE: unit strings from the provider have NO separator
                     # between policy_id and asset_name (confirmed against
-                    # real devnet data, e.g.
-                    # "882e60dbd5e0642cb31263c0ed504dc341e97314549ea400fdcec6ce5a504550472d424541434f4e2d54455354").
-                    # policy_id is always exactly 56 hex chars (28 bytes);
-                    # everything after that is the asset_name. A prior
-                    # version of this code incorrectly used
-                    # asset.unit.partition(".") which silently produced
-                    # wrong results since no "." is ever present.
+                    # real devnet data). policy_id is always exactly 56 hex
+                    # chars (28 bytes); everything after that is the
+                    # asset_name.
                     POLICY_ID_HEX_LEN = 56
                     grouped: dict[bytes, dict[bytes, int]] = {}
                     for asset in u.assets:
@@ -508,11 +570,16 @@ class GenesisTransaction:
         cls,
         perm_keys: "PermKeys.KeySet",
         owner_address: PlutusAddress,
-        registry_policy_id: bytes,
+        policy_id: bytes,
         asset_name_prefix: bytes,
-        beacon_policy_id: bytes,
-        beacon_asset_name: bytes,
     ) -> MasterDatum:
+        """
+        beacon_policy_id / beacon_asset_name are deliberately NOT passed
+        here anymore - MasterDatum no longer carries those fields (see
+        cardano_types.py). Canonical identity is now established purely
+        by the script's own compile-time parameters, not by anything
+        stored in the datum.
+        """
         for name, value in [
             ("authority_key", perm_keys.authority_key),
             ("operator_key",  perm_keys.operator_key),
@@ -530,10 +597,8 @@ class GenesisTransaction:
             owner_address=owner_address,
             nonce=0,
             is_paused=AikenFalse(),
-            policy_id=registry_policy_id,
+            policy_id=policy_id,
             asset_name_prefix=asset_name_prefix,
-            beacon_policy_id=beacon_policy_id,
-            beacon_asset_name=beacon_asset_name,
             forward_link=NoneChainLink(),
             backward_link=NoneChainLink(),
             stats=RegistryStats(
@@ -554,25 +619,22 @@ class GenesisTransaction:
         network: Network,
         funding_account: "Wallet.DerivedAccount",
         genesis_utxo: UtxoInfo,
-        beacon_compiled_code_hex: str,
-        beacon_policy_id_hex: str,
+        compiled_code_hex: str,
+        policy_id_hex: str,
         beacon_asset_name: bytes,
-        registry_compiled_code_hex: str,
-        registry_policy_id_hex: str,
         asset_name_prefix: bytes,
         perm_keys: "PermKeys.KeySet",
     ) -> "GenesisTransaction.Result":
 
         context = cls._ProviderContext(backend, network)
 
-        registry_policy_id_bytes = bytes.fromhex(registry_policy_id_hex)
-        beacon_policy_id_bytes   = bytes.fromhex(beacon_policy_id_hex)
+        policy_id_bytes = bytes.fromhex(policy_id_hex)
 
         registry_script_address = Address(
-            payment_part=ScriptHash(registry_policy_id_bytes),
+            payment_part=ScriptHash(policy_id_bytes),
             network=network,
         )
-        beacon_script = PlutusV3Script(bytes.fromhex(beacon_compiled_code_hex))
+        script = PlutusV3Script(bytes.fromhex(compiled_code_hex))
 
         genesis_utxo_obj = UTxO(
             input=TransactionInput(
@@ -589,19 +651,17 @@ class GenesisTransaction:
         genesis_master_datum = cls._build_master_datum(
             perm_keys=perm_keys,
             owner_address=owner_plutus_address,
-            registry_policy_id=registry_policy_id_bytes,
+            policy_id=policy_id_bytes,
             asset_name_prefix=asset_name_prefix,
-            beacon_policy_id=beacon_policy_id_bytes,
-            beacon_asset_name=beacon_asset_name,
         )
 
         beacon_multi_asset = MultiAsset({
-            ScriptHash(beacon_policy_id_bytes): Asset({AssetName(beacon_asset_name): 1})
+            ScriptHash(policy_id_bytes): Asset({AssetName(beacon_asset_name): 1})
         })
 
         builder = TransactionBuilder(context, ttl=context.last_block_slot + cls.TTL_BUFFER_SLOTS)
         builder.add_input(genesis_utxo_obj)
-        builder.add_minting_script(beacon_script, Redeemer(MintBeacon()))
+        builder.add_minting_script(script, Redeemer(MintBeacon()))
         builder.mint = beacon_multi_asset
         builder.add_output(TransactionOutput(
             address=registry_script_address,
@@ -627,8 +687,7 @@ class GenesisTransaction:
             tx_id=tx_id,
             master_utxo_ref=f"{tx_id}#0",
             registry_script_address=str(registry_script_address),
-            registry_policy_id_hex=registry_policy_id_hex,
-            beacon_policy_id_hex=beacon_policy_id_hex,
+            policy_id_hex=policy_id_hex,
             beacon_asset_name_hex=beacon_asset_name.hex(),
         )
 
@@ -637,19 +696,21 @@ class GenesisTransaction:
 # DeploymentRecord - writes deployment.json
 # ═══════════════════════════════════════════════════════════════════════════
 #
-# deployment.json structure (confirmed/agreed):
+# deployment.json structure (SIMPLIFIED - single script, single policy ID):
 #
 # {
 #   "network": ...,
 #   "timestamp_utc": ...,
 #   "deployed_from_wallet_address": ...,
 #   "transaction_hash": ...,              <- the genesis bootstrap tx itself
-#   "genesis_transaction_hash": ...,      <- the UTXO consumed as beacon_policy's parameter
+#   "genesis_transaction_hash": ...,      <- the UTXO consumed as the script's genesis_ref parameter
 #
-#   "registry_contract": { policy_id, script_address, bootstrap_generated_plutus_path },
+#   "contract": { policy_id, script_address, bootstrap_generated_plutus_path },
 #
-#   "beacon_contract": { policy_id, genesis_tx_hash, genesis_output_index,
-#                         asset_name_hex, asset_name_utf8 },
+#   "beacon": { asset_name_hex, asset_name_utf8 },
+#       <- policy_id deliberately NOT repeated here: it's IDENTICAL to
+#          contract.policy_id (same compiled script, same hash), so
+#          duplicating it would misleadingly imply it could ever differ.
 #
 #   "master_utxo": {
 #       utxo_ref, transaction_hash, output_index, script_address,
@@ -660,18 +721,6 @@ class GenesisTransaction:
 #   "permission_keys": { authority_key, operator_key, owner_key }
 # }
 #
-# Repetition across sections (e.g. beacon policy_id appearing in both
-# beacon_contract and master_utxo.beacon_token) is intentional - each
-# section should be independently readable without cross-referencing
-# others.
-#
-# asset_fingerprint (CIP-14) is verified against all 5 official test
-# vectors in test_cardano_fingerprint.py before being trusted here. If
-# fingerprint computation ever fails for an unexpected reason, it degrades
-# to None rather than blocking the write of an already-confirmed,
-# on-chain-successful deployment record - it's a cosmetic/display field,
-# not load-bearing for anything downstream.
-
 # asset_fingerprint (CIP-14) is verified against all 5 official test
 # vectors before being trusted here. If fingerprint computation ever fails
 # for an unexpected reason, it degrades to None rather than blocking the
@@ -719,8 +768,8 @@ class DeploymentRecord:
         deployed_from_wallet_address: str
         transaction_hash: str
         genesis_transaction_hash: str
-        registry_contract: dict
-        beacon_contract: dict
+        contract: dict
+        beacon: dict
         master_utxo: dict
         permission_keys: dict
 
@@ -743,11 +792,11 @@ class DeploymentRecord:
         except UnicodeDecodeError:
             asset_name_utf8 = None
 
-        beacon_policy_id_bytes = bytes.fromhex(tx_result.beacon_policy_id_hex)
-        token_id = tx_result.beacon_policy_id_hex + beacon_asset_name.hex()
+        policy_id_bytes = bytes.fromhex(tx_result.policy_id_hex)
+        token_id = tx_result.policy_id_hex + beacon_asset_name.hex()
 
         try:
-            fingerprint = _asset_fingerprint(beacon_policy_id_bytes, beacon_asset_name)
+            fingerprint = _asset_fingerprint(policy_id_bytes, beacon_asset_name)
         except Exception:
             # Cosmetic field only - see module-level note above. Never let
             # a fingerprint computation issue block writing the rest of an
@@ -757,16 +806,13 @@ class DeploymentRecord:
         # tx_result.master_utxo_ref is "{tx_hash}#{index}"
         master_tx_hash, _, master_index_str = tx_result.master_utxo_ref.partition("#")
 
-        registry_contract = {
-            "policy_id": tx_result.registry_policy_id_hex,
+        contract = {
+            "policy_id": tx_result.policy_id_hex,
             "script_address": tx_result.registry_script_address,
             "bootstrap_generated_plutus_path": str(blueprint_output_path),
         }
 
-        beacon_contract = {
-            "policy_id": tx_result.beacon_policy_id_hex,
-            "genesis_tx_hash": genesis_utxo.tx_hash,
-            "genesis_output_index": genesis_utxo.output_index,
+        beacon = {
             "asset_name_hex": tx_result.beacon_asset_name_hex,
             "asset_name_utf8": asset_name_utf8,
         }
@@ -777,7 +823,7 @@ class DeploymentRecord:
             "output_index": int(master_index_str),
             "script_address": tx_result.registry_script_address,
             "beacon_token": {
-                "policy_id": tx_result.beacon_policy_id_hex,
+                "policy_id": tx_result.policy_id_hex,
                 "asset_name_hex": tx_result.beacon_asset_name_hex,
                 "asset_name_utf8": asset_name_utf8,
                 "token_id": token_id,
@@ -791,8 +837,8 @@ class DeploymentRecord:
             deployed_from_wallet_address=str(funding_account.address),
             transaction_hash=master_tx_hash,
             genesis_transaction_hash=genesis_utxo.tx_hash,
-            registry_contract=registry_contract,
-            beacon_contract=beacon_contract,
+            contract=contract,
+            beacon=beacon,
             master_utxo=master_utxo,
             permission_keys=perm_keys.as_dict(),
         )

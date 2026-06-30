@@ -1,0 +1,34 @@
+{
+  "network": "TESTNET",
+  "timestamp_utc": "2026-06-30T13:26:37.485349+00:00",
+  "deployed_from_wallet_address": "addr_test1qpqy3lufef8c3en9nrnzp2svwy5vy9zangvp46dy4qw23clgfxhn3pqv243d6wptud7fuaj5tjqer7wc7m036gx0emsqaqa8te",
+  "transaction_hash": "889edb2148ad88c55924e84a7426a738a7a6e2912a39c2e7b0189d5a1c5f0930",
+  "genesis_transaction_hash": "dc0d0d0a13e683e443c575147ec12136e5ac6a4f994cd4189d4d25bed541c44d",
+  "contract": {
+    "policy_id": "b4736e069d100341c0d6445748836329173c658dbdf858c76256a0e5",
+    "script_address": "addr_test1wz68xmsxn5gqxswq6ez9wjyrvv53w0r93k7lskx8vft2pegqmuydc",
+    "bootstrap_generated_plutus_path": "bootstrap_generated_plutus.json"
+  },
+  "beacon": {
+    "asset_name_hex": "5a504550472d424541434f4e2d54455354",
+    "asset_name_utf8": "ZPEPG-BEACON-TEST"
+  },
+  "master_utxo": {
+    "utxo_ref": "889edb2148ad88c55924e84a7426a738a7a6e2912a39c2e7b0189d5a1c5f0930#0",
+    "transaction_hash": "889edb2148ad88c55924e84a7426a738a7a6e2912a39c2e7b0189d5a1c5f0930",
+    "output_index": 0,
+    "script_address": "addr_test1wz68xmsxn5gqxswq6ez9wjyrvv53w0r93k7lskx8vft2pegqmuydc",
+    "beacon_token": {
+      "policy_id": "b4736e069d100341c0d6445748836329173c658dbdf858c76256a0e5",
+      "asset_name_hex": "5a504550472d424541434f4e2d54455354",
+      "asset_name_utf8": "ZPEPG-BEACON-TEST",
+      "token_id": "b4736e069d100341c0d6445748836329173c658dbdf858c76256a0e55a504550472d424541434f4e2d54455354",
+      "asset_fingerprint": "asset1cgvgrakauhmlydu9uzzut86vjhv5jjrnx0d2qu"
+    }
+  },
+  "permission_keys": {
+    "authority_key": "aa3edc38bd2386f9a6bdd3bf633dea7e2045c85476a8d445f0c3fc35ffa42f6a",
+    "operator_key": "fa2051685c04478e1d351194e3303727c087a6498d6cf4f3050d37ba76f0edc8",
+    "owner_key": "186855b264674f7aa1e9a8c3155493384486e0cead1c5c3453551e0f0afc6b49"
+  }
+}

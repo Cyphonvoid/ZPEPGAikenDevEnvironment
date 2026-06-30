@@ -422,7 +422,7 @@ validator archive_registry(genesis_ref: OutputReference, beacon_asset_name: Byte
     // spent master UTXO is itself locked at. Used everywhere below in
     // place of the old datum-supplied beacon_policy_id field.
     let master_input = find_master_input(self.inputs, own_ref)
-    let own_policy_id = own_script_hash(master_input.output.address)
+    let own_policy_id = own_script_hash(master_input.address)
 
     when redeemer is {
       MintDocument {
@@ -520,6 +520,7 @@ validator archive_registry(genesis_ref: OutputReference, beacon_asset_name: Byte
 
       Pause { nonce, signature } -> {
         expect nonce == old_datum.nonce
+        expect old_datum.is_paused == False
         let signed_payload =
           bytearray.concat(bytearray.from_int_big_endian(nonce, 8), "PAUSE")
         expect verify_ed25519_signature(old_datum.authority_key, signed_payload, signature)
@@ -547,6 +548,7 @@ validator archive_registry(genesis_ref: OutputReference, beacon_asset_name: Byte
 
       Resume { nonce, signature } -> {
         expect nonce == old_datum.nonce
+        expect old_datum.is_paused == True
         let signed_payload =
           bytearray.concat(bytearray.from_int_big_endian(nonce, 8), "RESUME")
         expect verify_ed25519_signature(old_datum.authority_key, signed_payload, signature)

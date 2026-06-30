@@ -1,0 +1,60 @@
+==============================================================================
+ZPEPG ARCHIVE REGISTRY - ON-CHAIN INTEGRATION TEST REPORT
+==============================================================================
+Started:  2026-06-30T13:36:06.612127+00:00
+Finished: 2026-06-30T13:36:17.698260+00:00
+Total duration: 11.09s
+
+TOTAL: 7   PASSED: 5   FAILED: 2
+==============================================================================
+
+[1/7] PASS  MintDocument - happy path
+    expected:  should succeed
+    duration:  1.43s
+    tx_id:     67338599c2fce5d293b82ada116caf04307ca371b0158f7c61447e36811a06d3
+    detail:    Minted document, nonce 12->13, total_token_count=2
+
+[2/7] PASS  Pause - happy path
+    expected:  should succeed
+    duration:  1.42s
+    tx_id:     965829a1749ea4daec5ee12e801b9cf7ab7e4586a9db9ae37b336ed9b11552af
+    detail:    Paused, nonce 13->14, is_paused=True
+
+[3/7] PASS  Resume - happy path
+    expected:  should succeed
+    duration:  1.39s
+    tx_id:     fda7ee5d61cb66f7ccd3ca569ba3d2aff7146d9bfd24e84e07e82bc6f7593908
+    detail:    Resumed, nonce 14->15, is_paused=False
+
+[4/7] PASS  RotateKey (OperatorKey) - round-trip
+    expected:  should succeed
+    duration:  2.69s
+    tx_id:     54e82087f3e952b201c657f65626d8ba728631054b0adc87041114b15bfdee81
+    detail:    Operator key round-trip confirmed: original -> throwaway -> original. [Rotated operator_key, nonce 15->16] then [Rotated operator_key, nonce 16->17]
+
+[5/7] FAIL  LinkForward - happy path (one-time only)
+    expected:  should succeed
+    duration:  0.00s
+    detail:    Precondition failed: forward_link is already set (not None). LinkForward is a one-time-only action per deployment - redeploy genesis fresh on devnet to test this again.
+
+[6/7] FAIL  LinkBackward - happy path (one-time only)
+    expected:  should succeed
+    duration:  0.00s
+    detail:    Precondition failed: backward_link is already set (not None). LinkBackward is a one-time-only action per deployment - redeploy genesis fresh on devnet to test this again.
+
+[7/7] PASS  Withdraw - happy path
+    expected:  should succeed
+    duration:  1.34s
+    tx_id:     b18f262949391575cd0b316d360695db76ac0ce684b2e99ebf6c62f07382efb0
+    detail:    Withdrew 2000000 lovelace to owner_address, nonce 17->18
+
+==============================================================================
+SUMMARY
+==============================================================================
+  PASS  MintDocument - happy path
+  PASS  Pause - happy path
+  PASS  Resume - happy path
+  PASS  RotateKey (OperatorKey) - round-trip
+  FAIL  LinkForward - happy path (one-time only)
+  FAIL  LinkBackward - happy path (one-time only)
+  PASS  Withdraw - happy path
