@@ -29,7 +29,7 @@ from pycardano import (
 from pycardano.backend.base import ChainContext
 from pycardano.plutus import ExecutionUnits
 
-from cardano_types import (
+from test_types import (
     AikenFalse, InlineStakeCredential, MasterDatum, MintBeacon,
     NoneChainLink, OutputReference, PlutusAddress, RegistryStats,
     SomeStakeCredential, VerificationKeyCredential,

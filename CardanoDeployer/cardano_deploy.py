@@ -101,7 +101,7 @@ class CLI:
             help="Path to perm_keys.json (default: perm_keys.json).",
         )
         parser.add_argument(
-            "--source-blueprint", default="zpepg_aiken_registry/plutus.json",
+            "--source-blueprint", default="/workspaces/ZPEPGAikenDevEnvironment/zpepg_aiken_registry/plutus.json",
             help="Path to unparameterized plutus.json from `aiken build`.",
         )
         parser.add_argument(

@@ -254,33 +254,21 @@ fn find_master_output_by_beacon(
   }
 }
 
-fn find_token_output_with_datum(
-  outputs: List<Output>,
-  policy_id: ByteArray,
-  beacon_policy_id: ByteArray,
-  beacon_asset_name: ByteArray,
-) -> TokenDatum {
+fn find_token_output_with_datum(outputs: List<Output>, policy_id: ByteArray) -> TokenDatum {
   when outputs is {
     [] -> fail @"Token output with inline TokenDatum not found"
-    [head, ..tail] -> {
-      let holds_beacon =
-        assets.quantity_of(head.value, beacon_policy_id, beacon_asset_name) == 1
-      if holds_beacon {
-        find_token_output_with_datum(tail, policy_id, beacon_policy_id, beacon_asset_name)
-      } else {
-        when head.datum is {
-          InlineDatum(datum_data) -> {
-            expect token_datum: TokenDatum = datum_data
-            if token_datum.policy_id == policy_id {
-              token_datum
-            } else {
-              find_token_output_with_datum(tail, policy_id, beacon_policy_id, beacon_asset_name)
-            }
+    [head, ..tail] ->
+      when head.datum is {
+        InlineDatum(datum_data) -> {
+          expect token_datum: TokenDatum = datum_data
+          if token_datum.policy_id == policy_id {
+            token_datum
+          } else {
+            find_token_output_with_datum(tail, policy_id)
           }
-          _ -> find_token_output_with_datum(tail, policy_id, beacon_policy_id, beacon_asset_name)
         }
+        _ -> find_token_output_with_datum(tail, policy_id)
       }
-    }
   }
 }
 
@@ -370,13 +358,7 @@ validator archive_registry {
         let new_datum = datum_from_output(new_output)
         require_beacon_carried_forward(new_output, old_datum)
 
-        let token_output_datum =
-          find_token_output_with_datum(
-            self.outputs,
-            old_datum.policy_id,
-            old_datum.beacon_policy_id,
-            old_datum.beacon_asset_name,
-          )
+        let token_output_datum = find_token_output_with_datum(self.outputs, old_datum.policy_id)
 
         // Validate Token Setup (Pillar 2 Extensions)
         expect token_output_datum.cross_chain_global_id == cross_chain_global_id
@@ -748,13 +730,7 @@ validator archive_registry {
         let prefix_len = bytearray.length(prefix)
         expect bytearray.take(asset_name, prefix_len) == prefix
 
-        let token_output_datum =
-          find_token_output_with_datum(
-            self.outputs,
-            policy_id,
-            master_datum.beacon_policy_id,
-            master_datum.beacon_asset_name,
-          )
+        let token_output_datum = find_token_output_with_datum(self.outputs, policy_id)
 
         let expected_asset_id = bytearray.concat(policy_id, asset_name)
         expect token_output_datum.cardano_asset_id == expected_asset_id
