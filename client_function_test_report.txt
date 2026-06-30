@@ -1,40 +1,40 @@
 ==============================================================================
 CARDANO NETWORK CLIENT - FUNCTION TEST REPORT
 ==============================================================================
-Started:  2026-06-30T16:52:17.953350+00:00
-Finished: 2026-06-30T16:52:32.458405+00:00
-Total duration: 14.51s
+Started:  2026-06-30T17:01:03.627878+00:00
+Finished: 2026-06-30T17:01:17.866157+00:00
+Total duration: 14.24s
 
 TOTAL: 9   PASSED: 9   FAILED: 0
 ==============================================================================
 
 [1/9] PASS  get_master_state - read
-    duration:  0.03s
-    detail:    nonce=11, is_paused=AikenFalse()
+    duration:  0.01s
+    detail:    nonce=17, is_paused=AikenFalse()
 
 [2/9] PASS  get_stats - read
     duration:  0.01s
-    detail:    total_token_count=2, total_unique_documents=2
+    detail:    total_token_count=3, total_unique_documents=3
 
 [3/9] PASS  mint_document - write + cross-check via find_document
-    duration:  2.79s
-    tx_hash:   df5e54fd56f3f2b15939e0ba3a86fa3ac24361e6968103d72fa17cadddb60504
-    detail:    Minted + independently re-found via find_document. nonce 11->12
+    duration:  2.48s
+    tx_hash:   35a9a5379553711a0fdeb91e14aa153850ed97912a2c29f01e0d0044f4b9a76c
+    detail:    Minted + independently re-found via find_document. nonce 17->18
 
 [4/9] PASS  pause / resume - round-trip
-    duration:  4.64s
-    tx_hash:   7c9b269c0bd4cf60e4d4978e7a3e141917e1490c9fce1fad8af30a562f38cc4d
-    detail:    Pause/Resume round-trip confirmed. [pause tx 82326f136a1dfca466a8bbf7540d9d770acad3585a66d384f2394d23b28e3e68] [resume tx 7c9b269c0bd4cf60e4d4978e7a3e141917e1490c9fce1fad8af30a562f38cc4d]
+    duration:  4.68s
+    tx_hash:   a1af7b1c0ca4b36e7ed4ea0cf2fee1a5b96a7eb5cfd133a85b79b01eefe7ecd0
+    detail:    Pause/Resume round-trip confirmed. [pause tx 0fb11cf20eb59acecba7a823ffed83a20301b2c2e8d8fc713b895988614b3ef1] [resume tx a1af7b1c0ca4b36e7ed4ea0cf2fee1a5b96a7eb5cfd133a85b79b01eefe7ecd0]
 
 [5/9] PASS  rotate_key - round-trip + in-memory sync check
-    duration:  4.63s
-    tx_hash:   06d99b8c64f279560eeeb0cf6c619a20e7badcdf57df6182b2c28a76def98b89
-    detail:    Operator key round-trip confirmed, including client's in-memory key staying in sync. [fa1c6f64218d6fa0a36853a4ce827afbfea924c1437905b539a1f4a63ef30f19] [06d99b8c64f279560eeeb0cf6c619a20e7badcdf57df6182b2c28a76def98b89]
+    duration:  4.71s
+    tx_hash:   d326a6be5168636b108d4f024e1bc345d28d3f6644a6c7607fef7a75389c866b
+    detail:    Operator key round-trip confirmed, including client's in-memory key staying in sync. [da6cdb23859d561b4c028ed4340f800d8671b4a3ba54b61870f52d9f19ee2d2a] [d326a6be5168636b108d4f024e1bc345d28d3f6644a6c7607fef7a75389c866b]
 
 [6/9] PASS  withdraw - write
-    duration:  2.35s
-    tx_hash:   34e0da5ce714abb42a2d0a1012ba98399fe0001aab2643cc6eaec85d55c54eca
-    detail:    Withdrew 2000000 lovelace, nonce 16->17
+    duration:  2.31s
+    tx_hash:   118c9b52d6f51a3f7ccc8492d83d42e206d9d8ffb629977d36bf12677a1c80ba
+    detail:    Withdrew 2000000 lovelace, nonce 22->23
 
 [7/9] PASS  link_forward - one-time only
     duration:  0.01s

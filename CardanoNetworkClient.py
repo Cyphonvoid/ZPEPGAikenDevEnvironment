@@ -342,16 +342,15 @@ class BlockFrostBackend(BlockFrostChainContext):
         """
         Returns tx info dict if found/confirmed, None if not yet visible.
 
-        CAVEAT (unverified against a live call in this project - confirm
-        before relying on it in production): uses the underlying
-        blockfrost-python client's `.transaction()` method via this
-        context's `.api` attribute. blockfrost-python 0.7.0 is the
-        confirmed installed version; method name/shape should match its
-        docs, but hasn't been exercised end-to-end here yet.
+        VERIFIED (live call confirmed): self.api.transaction(hash=...)
+        is correct and returns a blockfrost.utils.Namespace object - NOT
+        a namedtuple, so _asdict()/dict() don't apply. vars(tx) is the
+        correct conversion, confirmed against a real transaction's
+        actual returned object during this project's testnet deployment.
         """
         try:
             tx = self.api.transaction(hash=tx_hash)
-            return tx._asdict() if hasattr(tx, "_asdict") else dict(tx)
+            return vars(tx)
         except ApiError as e:
             if getattr(e, "status_code", None) == 404:
                 return None
@@ -500,7 +499,7 @@ class CardanoNetworkClient:
     full design rationale.
     """
 
-    CONFIRMATION_TIMEOUT_S = 60.0
+    CONFIRMATION_TIMEOUT_S = 180.0  # 60s was fine for devnet's near-instant blocks; real networks need more
     CONFIRMATION_POLL_INTERVAL_S = 2.0
     MASTER_UTXO_FLOOR_LOVELACE = 3_000_000
     TOKEN_UTXO_FLOOR_LOVELACE = 3_000_000
@@ -1127,7 +1126,9 @@ class CardanoNetworkClient:
         ))
 
         tx_hash = cls._sign_and_submit_static(builder, context, funding_key, funding_address)
-        block_info = cls._wait_for_confirmation_static(context, tx_hash)
+        block_info = cls._wait_for_confirmation_static(
+            context, tx_hash, cls.CONFIRMATION_TIMEOUT_S, cls.CONFIRMATION_POLL_INTERVAL_S
+        )
         tx_result = TxResult(tx_hash=tx_hash, confirmed=True, block_info=block_info, new_master_state=None)
 
         deployment_json_path_str = None

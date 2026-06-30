@@ -22,7 +22,7 @@ from CardanoNetworkClient import CardanoNetworkClient, CardanoNet
 
 NETWORK_TYPE = CardanoNet.TESTNET   # CardanoNet.TESTNET (preprod) or CardanoNet.MAINNET
 
-FUNDING_SIGNING_KEY = "PASTE_MNEMONIC_OR_CBORHEX_OR_FILEPATH_HERE"
+FUNDING_SIGNING_KEY = "58200e0d160a055b49f5f0b3f3de26b87ebf51cde2ce3036b9fffe4acdc7a805d71e"
 PERM_KEYS_JSON_PATH = "perm_keys.json"
 
 SOURCE_BLUEPRINT_PATH = "/workspaces/ZPEPGAikenDevEnvironment/zpepg_aiken_registry/plutus.json"
