@@ -1,0 +1,64 @@
+==============================================================================
+CARDANO NETWORK CLIENT - FUNCTION TEST REPORT
+==============================================================================
+Started:  2026-06-30T15:52:48.038404+00:00
+Finished: 2026-06-30T15:53:07.017785+00:00
+Total duration: 18.98s
+
+TOTAL: 9   PASSED: 9   FAILED: 0
+==============================================================================
+
+[1/9] PASS  get_master_state - read
+    duration:  0.04s
+    detail:    nonce=3, is_paused=AikenFalse()
+
+[2/9] PASS  get_stats - read
+    duration:  0.02s
+    detail:    total_token_count=1, total_unique_documents=1
+
+[3/9] PASS  mint_document - write + cross-check via find_document
+    duration:  2.63s
+    tx_hash:   7cdb0a9d87536e52e58b6a077951464e57a8bade299ff27e22c81feee81174d0
+    detail:    Minted + independently re-found via find_document. nonce 3->4
+
+[4/9] PASS  pause / resume - round-trip
+    duration:  4.68s
+    tx_hash:   be0704449042584decdf365b90769afc3ac7623db7bca764651cb399c7d17e6b
+    detail:    Pause/Resume round-trip confirmed. [pause tx 4b92a8231d1496682954246a714f3dda7165dc8c8f5e547ac3c56e1155bdeac3] [resume tx be0704449042584decdf365b90769afc3ac7623db7bca764651cb399c7d17e6b]
+
+[5/9] PASS  rotate_key - round-trip + in-memory sync check
+    duration:  4.68s
+    tx_hash:   54a1e9d57b47d48f14dd9546197cc0116ce56cb02ca05bf920e115e87c115e56
+    detail:    Operator key round-trip confirmed, including client's in-memory key staying in sync. [754a759d23f80f857e8cfb0ac303540cb77d899baeeabc1215f155d19b49fde5] [54a1e9d57b47d48f14dd9546197cc0116ce56cb02ca05bf920e115e87c115e56]
+
+[6/9] PASS  withdraw - write
+    duration:  2.27s
+    tx_hash:   3a70f1be8dda1fbc0c160209e094c952cbf1a0171af8121c7b353ce5806fb9b0
+    detail:    Withdrew 2000000 lovelace, nonce 8->9
+
+[7/9] PASS  link_forward - one-time only
+    duration:  2.33s
+    tx_hash:   b429554f462af21981ec07cc315c7e11874b484eef49cef55b9a5309df890fdd
+    detail:    forward_link set permanently, nonce 9->10
+
+[8/9] PASS  link_backward - one-time only
+    duration:  2.28s
+    tx_hash:   13f9c16bf4e90df01565f7af5cd6071e8333f28acb0765b67eb0b99e63a14072
+    detail:    backward_link set permanently, nonce 10->11
+
+[9/9] PASS  MissingKeyError - raised correctly when role key absent
+    duration:  0.01s
+    detail:    Correctly raised MissingKeyError: This action requires the 'authority' key, but it wasn't provided at construction. Pass authority_key=... when creating CardanoNetworkClient.
+
+==============================================================================
+SUMMARY
+==============================================================================
+  PASS  get_master_state - read
+  PASS  get_stats - read
+  PASS  mint_document - write + cross-check via find_document
+  PASS  pause / resume - round-trip
+  PASS  rotate_key - round-trip + in-memory sync check
+  PASS  withdraw - write
+  PASS  link_forward - one-time only
+  PASS  link_backward - one-time only
+  PASS  MissingKeyError - raised correctly when role key absent

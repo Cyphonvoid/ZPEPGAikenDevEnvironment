@@ -1224,12 +1224,6 @@ def main() -> int:
         return 1
 
     runner.run(
-        name="MintDocument - happy path",
-        expect_success=True,
-        fn=lambda: test_mint_document(suite),
-    )
-
-    runner.run(
         name="Pause - happy path",
         expect_success=True,
         fn=lambda: test_pause(suite),
@@ -1240,6 +1234,15 @@ def main() -> int:
         expect_success=True,
         fn=lambda: test_resume(suite),
     )
+
+
+    runner.run(
+        name="MintDocument - happy path",
+        expect_success=True,
+        fn=lambda: test_mint_document(suite),
+    )
+
+
 
     runner.run(
         name="RotateKey (OperatorKey) - round-trip",
@@ -1265,11 +1268,11 @@ def main() -> int:
         fn=lambda: test_withdraw(suite),
     )
 
-    runner.write_report(REPORT_PATH)
 
+    runner.write_report(REPORT_PATH)
+    
     failed = sum(1 for r in runner.results if not r.passed)
     return 1 if failed else 0
-
 
 if __name__ == "__main__":
     sys.exit(main())
