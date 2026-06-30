@@ -719,40 +719,27 @@ class CardanoNetworkClient:
 
         return builder
 
-    @staticmethod
-    def _sign_and_submit_static(
-        builder: TransactionBuilder, context: ChainContext, signing_key, change_address: Address,
-    ) -> str:
-        signed_tx = builder.build_and_sign(signing_keys=[signing_key], change_address=change_address)
+    def _sign_and_submit(self, builder: TransactionBuilder) -> str:
+        signed_tx = builder.build_and_sign(
+            signing_keys=[self._funding_key], change_address=self._funding_address,
+        )
         tx_hash = str(signed_tx.id)
-        context.submit_tx(signed_tx)
+        self.context.submit_tx(signed_tx)
         return tx_hash
 
-    @staticmethod
-    def _wait_for_confirmation_static(
-        context: ChainContext, tx_hash: str,
-        timeout_s: float = 60.0, poll_interval_s: float = 2.0,
+    def _wait_for_confirmation(
+        self, tx_hash: str, timeout_s: Optional[float] = None, poll_interval_s: Optional[float] = None,
     ) -> dict:
+        timeout_s = timeout_s if timeout_s is not None else self.CONFIRMATION_TIMEOUT_S
+        poll_interval_s = poll_interval_s if poll_interval_s is not None else self.CONFIRMATION_POLL_INTERVAL_S
         deadline = time.monotonic() + timeout_s
         while True:
-            status = context.get_tx_status(tx_hash)
+            status = self.context.get_tx_status(tx_hash)
             if status is not None:
                 return status
             if time.monotonic() >= deadline:
                 raise ConfirmationTimeoutError(tx_hash, timeout_s)
             time.sleep(poll_interval_s)
-
-    def _sign_and_submit(self, builder: TransactionBuilder) -> str:
-        return self._sign_and_submit_static(builder, self.context, self._funding_key, self._funding_address)
-
-    def _wait_for_confirmation(
-        self, tx_hash: str, timeout_s: Optional[float] = None, poll_interval_s: Optional[float] = None,
-    ) -> dict:
-        return self._wait_for_confirmation_static(
-            self.context, tx_hash,
-            timeout_s if timeout_s is not None else self.CONFIRMATION_TIMEOUT_S,
-            poll_interval_s if poll_interval_s is not None else self.CONFIRMATION_POLL_INTERVAL_S,
-        )
 
     def _execute_and_confirm(self, builder: TransactionBuilder) -> TxResult:
         tx_hash = self._sign_and_submit(builder)
@@ -979,53 +966,92 @@ class CardanoNetworkClient:
         return self._execute_and_confirm(builder)
 
     # ════════════════════════════════════════════════════════════════
-    # Genesis: pure class-level functionality, deliberately NOT an
-    # instance method
+    # Write: MintBeacon (genesis - one-shot, no master UTXO to spend yet)
+    # ════════════════════════════════════════════════════════════════
+
+    def mint_beacon(
+        self,
+        genesis_utxo: UTxO,
+        owner_address: PlutusAddress,
+        asset_name_prefix: bytes,
+    ) -> TxResult:
+        """
+        Performs genesis bootstrap: spends genesis_utxo (a plain wallet
+        UTXO, NOT the master UTXO - none exists yet), mints the beacon
+        under this script's own policy via MintBeacon, and seeds the
+        initial MasterDatum directly at the script's own address. See
+        registry_contract.ak's header comment / cardano_workflow.py's
+        GenesisTransaction for the authoritative version of this flow -
+        this mirrors it for standalone client use outside the deployer CLI.
+
+        genesis_utxo MUST be the exact UTXO this deployment's script was
+        compiled against (genesis_ref parameter) - using any other UTXO
+        will cause MintBeacon to fail on-chain (by design - this is the
+        one-shot guarantee).
+        """
+        for name, value in [
+            ("authority_key", self._authority_key), ("operator_key", self._operator_key),
+            ("owner_key", self._owner_key),
+        ]:
+            if value is None or len(value) != 32:
+                raise CardanoNetworkClientError(
+                    f"mint_beacon requires all three role keys (authority/operator/owner) "
+                    f"to be set and 32 bytes each - {name} is missing or invalid."
+                )
+
+        genesis_datum = MasterDatum(
+            authority_key=self._authority_key, operator_key=self._operator_key,
+            owner_key=self._owner_key, owner_address=owner_address, nonce=0,
+            is_paused=AikenFalse(), policy_id=self._policy_id, asset_name_prefix=asset_name_prefix,
+            forward_link=NoneChainLink(), backward_link=NoneChainLink(),
+            stats=RegistryStats(
+                total_token_count=0, total_unique_documents=0, last_minted_at=0,
+                last_cross_chain_global_id=b"", last_cardano_asset_id=b"",
+            ),
+        )
+
+        beacon_multi_asset = MultiAsset({
+            ScriptHash(self._policy_id): Asset({AssetName(self._beacon_asset_name): 1})
+        })
+
+        builder = TransactionBuilder(
+            self.context, ttl=self.context.last_block_slot + self.TTL_BUFFER_SLOTS
+        )
+        builder.add_input(genesis_utxo)
+        builder.add_minting_script(self._script, Redeemer(MintBeacon()))
+        builder.mint = beacon_multi_asset
+        builder.add_output(TransactionOutput(
+            address=self._script_address,
+            amount=Value(coin=self.MASTER_UTXO_FLOOR_LOVELACE, multi_asset=beacon_multi_asset),
+            datum=genesis_datum,
+        ))
+
+        return self._execute_and_confirm(builder)
+
+    # ════════════════════════════════════════════════════════════════
+    # Factory: bootstrap_genesis (resolves the chicken-and-egg problem)
     # ════════════════════════════════════════════════════════════════
     #
-    # A CardanoNetworkClient INSTANCE represents interaction with an
-    # ALREADY-DEPLOYED contract - that's the entire reason its
-    # constructor requires a DeploymentConfig describing something that
-    # already exists. Genesis is conceptually different: it's the act of
-    # making a deployment exist in the first place. Putting it on an
-    # instance (even via a classmethod that quietly constructs one
-    # internally) blurs that boundary - it implies operating on a
-    # deployment that isn't real yet. So genesis lives ENTIRELY at the
-    # class level here: no self anywhere, no instance constructed until
-    # (optionally) after genesis has genuinely succeeded.
+    # mint_beacon() above is an instance method, which means using it
+    # requires __init__ first - but __init__ demands a DeploymentConfig
+    # describing an ALREADY-EXISTING deployment, even though mint_beacon
+    # is precisely the action that creates one. Every other write method
+    # genuinely needs a pre-existing deployment to find/spend the master
+    # UTXO against; mint_beacon doesn't, since no master UTXO exists yet.
     #
-    # Two tiers:
-    #   initiate_contract_genesis() - the actual genesis mechanics only.
-    #       Builds and submits the genesis transaction directly. Returns
-    #       a GenesisResult with everything about what was deployed -
-    #       NOT a client, since handing back something that represents
-    #       "ongoing interaction" isn't this function's concern.
-    #   deploy_contract() - the convenience wrapper. Calls
-    #       initiate_contract_genesis() first, and only once the
-    #       deployment genuinely exists does it construct and return a
-    #       CardanoNetworkClient instance pointed at it - consistent,
-    #       since at that point the instance represents real, already-
-    #       existing interaction, exactly what an instance is for.
-    #
-    # A client built this way is NOT special or "more authoritative"
-    # than one built later via the plain constructor against the same
-    # deployment.json - the client holds no meaningful state of its own
-    # beyond in-memory key tracking (kept in sync by rotate_key()).
-    # Discarding deploy_contract()'s returned client and constructing a
-    # fresh one later, pointed at the same deployment.json, is fully
-    # equivalent.
-
-    @dataclass(frozen=True)
-    class GenesisResult:
-        tx_result: TxResult
-        policy_id_hex: str
-        script_address: str
-        beacon_asset_name_hex: str
-        bootstrap_generated_plutus_path: str
-        deployment_json_path: Optional[str]
+    # bootstrap_genesis is the actual entry point for genesis: it does
+    # its own compile/parameterize/genesis-transaction work directly
+    # (mirroring cardano_workflow.py's AikenBlueprint.apply_parameters +
+    # GenesisTransaction.run, exactly the way the original deployer's
+    # GenesisTransaction.run() never needed a pre-built client either -
+    # it just took raw parameters), then RETURNS a fully-constructed,
+    # ready-to-use client at the end. Use this for genesis; use the
+    # regular constructor + mint_beacon() instance method only if you
+    # already happen to have a constructed client for some other reason
+    # and want to fire genesis through it directly.
 
     @classmethod
-    def initiate_contract_genesis(
+    def bootstrap_genesis(
         cls,
         funding_signing_key: Union[str, Path],
         operator_key: bytes,
@@ -1039,28 +1065,34 @@ class CardanoNetworkClient:
         genesis_utxo: Optional[UTxO] = None,
         owner_address: Optional[PlutusAddress] = None,
         deployment_json_output_path: Optional[Union[str, Path]] = None,
-    ) -> "CardanoNetworkClient.GenesisResult":
+    ) -> tuple["CardanoNetworkClient", TxResult]:
         """
-        Pure class-level genesis. No CardanoNetworkClient instance is
-        constructed anywhere in this function. Compiles + parameterizes
-        archive_registry against genesis_utxo (auto-selected if not
-        given: largest plain-ADA UTXO over 5 ADA at the funding address),
-        spends it while minting the beacon and seeding the initial
-        MasterDatum in one transaction, waits for confirmation, and
-        optionally writes deployment.json.
+        Performs full genesis bootstrap and returns (ready_client, result).
+
+        genesis_utxo: if not given, auto-selects the largest plain-ADA
+        (no other native assets) UTXO over 5 ADA at the funding address.
+
+        owner_address: if not given, defaults to the funding wallet's own
+        address (same default cardano_workflow.py's GenesisTransaction
+        uses) converted to PlutusAddress shape.
+
+        deployment_json_output_path: if given, writes a deployment.json
+        in the same shape DeploymentRecord.build/write produces, so this
+        can be used as a drop-in replacement for the CLI deployer's
+        genesis step, not just for ad-hoc/programmatic use.
         """
         pycardano_network = Network.MAINNET if network_type == CardanoNet.MAINNET else Network.TESTNET
 
         if network_type == CardanoNet.DEVNET:
-            context: ChainContext = YaciDevnetBackend(network=pycardano_network)
+            temp_context: ChainContext = YaciDevnetBackend(network=pycardano_network)
         else:
-            context = BlockFrostBackend(network=pycardano_network)
+            temp_context = BlockFrostBackend(network=pycardano_network)
 
         funding_key, funding_address = _load_funding_signing_key(funding_signing_key, pycardano_network)
 
         if genesis_utxo is None:
             candidates = [
-                u for u in context.utxos(funding_address)
+                u for u in temp_context.utxos(funding_address)
                 if len(u.output.amount.multi_asset) == 0 and u.output.amount.coin > 5_000_000
             ]
             if not candidates:
@@ -1081,9 +1113,20 @@ class CardanoNetworkClient:
             source_blueprint_path=source_blueprint_path,
             output_blueprint_path=output_blueprint_path,
         )
-        policy_id = bytes.fromhex(applied.policy_id_hex)
-        script_address = Address(payment_part=ScriptHash(policy_id), network=pycardano_network)
-        script = PlutusV3Script(bytes.fromhex(applied.compiled_code_hex))
+
+        script_address = Address(
+            payment_part=ScriptHash(bytes.fromhex(applied.policy_id_hex)),
+            network=pycardano_network,
+        )
+
+        deployment_config = DeploymentConfig(
+            policy_id_hex=applied.policy_id_hex,
+            script_address=str(script_address),
+            beacon_asset_name_hex=beacon_asset_name.hex(),
+            asset_name_prefix_hex=asset_name_prefix.hex(),
+            bootstrap_generated_plutus_path=str(output_blueprint_path),
+            raw={},
+        )
 
         if owner_address is None:
             payment_cred = VerificationKeyCredential(bytes(funding_address.payment_part))
@@ -1096,46 +1139,24 @@ class CardanoNetworkClient:
                 stake_cred = NoneStakeCredential()
             owner_address = PlutusAddress(payment_credential=payment_cred, stake_credential=stake_cred)
 
-        for name, value in [("authority_key", authority_key), ("operator_key", operator_key), ("owner_key", owner_key)]:
-            if value is None or len(value) != 32:
-                raise CardanoNetworkClientError(
-                    f"Genesis requires all three role keys (authority/operator/owner) "
-                    f"to be set and 32 bytes each - {name} is missing or invalid."
-                )
-
-        genesis_datum = MasterDatum(
-            authority_key=authority_key, operator_key=operator_key, owner_key=owner_key,
-            owner_address=owner_address, nonce=0, is_paused=AikenFalse(),
-            policy_id=policy_id, asset_name_prefix=asset_name_prefix,
-            forward_link=NoneChainLink(), backward_link=NoneChainLink(),
-            stats=RegistryStats(
-                total_token_count=0, total_unique_documents=0, last_minted_at=0,
-                last_cross_chain_global_id=b"", last_cardano_asset_id=b"",
-            ),
+        client = cls(
+            deployment=deployment_config,
+            funding_signing_key=funding_signing_key,
+            operator_key=operator_key,
+            authority_key=authority_key,
+            owner_key=owner_key,
+            network_type=network_type,
         )
 
-        beacon_multi_asset = MultiAsset({ScriptHash(policy_id): Asset({AssetName(beacon_asset_name): 1})})
+        result = client.mint_beacon(
+            genesis_utxo=genesis_utxo, owner_address=owner_address, asset_name_prefix=asset_name_prefix,
+        )
 
-        builder = TransactionBuilder(context, ttl=context.last_block_slot + cls.TTL_BUFFER_SLOTS)
-        builder.add_input(genesis_utxo)
-        builder.add_minting_script(script, Redeemer(MintBeacon()))
-        builder.mint = beacon_multi_asset
-        builder.add_output(TransactionOutput(
-            address=script_address,
-            amount=Value(coin=cls.MASTER_UTXO_FLOOR_LOVELACE, multi_asset=beacon_multi_asset),
-            datum=genesis_datum,
-        ))
-
-        tx_hash = cls._sign_and_submit_static(builder, context, funding_key, funding_address)
-        block_info = cls._wait_for_confirmation_static(context, tx_hash)
-        tx_result = TxResult(tx_hash=tx_hash, confirmed=True, block_info=block_info, new_master_state=None)
-
-        deployment_json_path_str = None
         if deployment_json_output_path is not None:
             record = {
                 "network": network_type.value,
                 "deployed_from_wallet_address": str(funding_address),
-                "transaction_hash": tx_hash,
+                "transaction_hash": result.tx_hash,
                 "genesis_transaction_hash": genesis_utxo.input.transaction_id.payload.hex(),
                 "contract": {
                     "policy_id": applied.policy_id_hex,
@@ -1148,68 +1169,5 @@ class CardanoNetworkClient:
                 },
             }
             Path(deployment_json_output_path).write_text(json.dumps(record, indent=2))
-            deployment_json_path_str = str(deployment_json_output_path)
 
-        return cls.GenesisResult(
-            tx_result=tx_result,
-            policy_id_hex=applied.policy_id_hex,
-            script_address=str(script_address),
-            beacon_asset_name_hex=beacon_asset_name.hex(),
-            bootstrap_generated_plutus_path=str(output_blueprint_path),
-            deployment_json_path=deployment_json_path_str,
-        )
-
-    @classmethod
-    def deploy_contract(
-        cls,
-        funding_signing_key: Union[str, Path],
-        operator_key: bytes,
-        authority_key: bytes,
-        owner_key: bytes,
-        network_type: CardanoNet,
-        beacon_asset_name: bytes,
-        asset_name_prefix: bytes,
-        source_blueprint_path: Union[str, Path],
-        output_blueprint_path: Union[str, Path],
-        genesis_utxo: Optional[UTxO] = None,
-        owner_address: Optional[PlutusAddress] = None,
-        deployment_json_output_path: Optional[Union[str, Path]] = None,
-    ) -> tuple["CardanoNetworkClient", "CardanoNetworkClient.GenesisResult"]:
-        """
-        Convenience wrapper: runs initiate_contract_genesis(), then -
-        only once the deployment genuinely exists on-chain - constructs
-        and returns a ready-to-use CardanoNetworkClient instance pointed
-        at it, alongside the GenesisResult. The returned client is not
-        special; discarding it and constructing a fresh one later via
-        the plain constructor + the same deployment.json is equivalent.
-
-        deployment_json_output_path should be given here (vs. left None)
-        in essentially all real uses, since otherwise there's no
-        deployment.json for any later client construction to point at.
-        """
-        genesis = cls.initiate_contract_genesis(
-            funding_signing_key=funding_signing_key, operator_key=operator_key,
-            authority_key=authority_key, owner_key=owner_key, network_type=network_type,
-            beacon_asset_name=beacon_asset_name, asset_name_prefix=asset_name_prefix,
-            source_blueprint_path=source_blueprint_path, output_blueprint_path=output_blueprint_path,
-            genesis_utxo=genesis_utxo, owner_address=owner_address,
-            deployment_json_output_path=deployment_json_output_path,
-        )
-
-        deployment_config = DeploymentConfig(
-            policy_id_hex=genesis.policy_id_hex,
-            script_address=genesis.script_address,
-            beacon_asset_name_hex=genesis.beacon_asset_name_hex,
-            asset_name_prefix_hex=asset_name_prefix.hex(),
-            bootstrap_generated_plutus_path=genesis.bootstrap_generated_plutus_path,
-            raw={},
-        )
-        client = cls(
-            deployment=deployment_config,
-            funding_signing_key=funding_signing_key,
-            operator_key=operator_key,
-            authority_key=authority_key,
-            owner_key=owner_key,
-            network_type=network_type,
-        )
-        return client, genesis
+        return client, result

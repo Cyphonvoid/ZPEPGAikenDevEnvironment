@@ -1,0 +1,15 @@
+{
+  "network": "devnet",
+  "deployed_from_wallet_address": "addr_test1qryvgass5dsrf2kxl3vgfz76uhp83kv5lagzcp29tcana68ca5aqa6swlq6llfamln09tal7n5kvt4275ckwedpt4v7q48uhex",
+  "transaction_hash": "c8664abad7c60a244dbcacb3ec80e65dbae8fc668c5d88f84d9e95b29bb88512",
+  "genesis_transaction_hash": "34e0da5ce714abb42a2d0a1012ba98399fe0001aab2643cc6eaec85d55c54eca",
+  "contract": {
+    "policy_id": "1970e3cafa3a0013249a57a8f0097cc1dccb6932d41962aaf4fb0058",
+    "script_address": "addr_test1wqvhpc72lgaqqyeynft63uqf0nqaejmfxt2pjc427nasqkqgc3k4n",
+    "bootstrap_generated_plutus_path": "smoke_test2_bootstrap_generated_plutus.json"
+  },
+  "beacon": {
+    "asset_name_hex": "5a504550472d424541434f4e2d534d4f4b455445535432",
+    "asset_name_utf8": "ZPEPG-BEACON-SMOKETEST2"
+  }
+}
