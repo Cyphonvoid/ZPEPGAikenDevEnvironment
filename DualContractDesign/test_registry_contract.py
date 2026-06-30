@@ -53,18 +53,18 @@ from pycardano import (
 )
 from pycardano.backend.base import ChainContext
 
-from CardanoDeployer.cardano_network import YaciDevNetApi, NetworkError, UtxoInfo
-from CardanoDeployer.cardano_types import (
+from DualContractDesign.CardanoDeployer.cardano_network import YaciDevNetApi, NetworkError, UtxoInfo
+from DualContractDesign.CardanoDeployer.cardano_types import (
     AikenFalse, AikenTrue, MasterDatum,
     PlutusAddress, SomeStakeCredential, VerificationKeyCredential,
-    OutputReference,
+    OutputReference, DeploymentChainLink, SomeChainLink, NoneChainLink,
 )
-from test_types import (
+from DualContractDesign.test_types import (
     TokenDatum, AuthorityKeyTag, OperatorKeyTag, OwnerKeyTag,
     MintDocument, Pause, Resume, Withdraw, RotateKey, LinkForward,
     LinkBackward, MintToken, BurnToken,
 )
-from CardanoDeployer.cardano_workflow import Wallet, PermKeys, GenesisTransaction
+from DualContractDesign.CardanoDeployer.cardano_workflow import Wallet, PermKeys, GenesisTransaction
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -84,6 +84,24 @@ TEST_GLOBAL_ID = b"01968f3a-test-cross-chain-id-0001"
 TEST_SHA256 = bytes.fromhex("a" * 64)  # 32 bytes, placeholder digest shape
 TEST_UPLOAD_DATE = b"2026-06-22T00:00:00Z"
 TEST_TOKEN_DATA = b'{"title": "Test Document", "format": "pdf"}'
+
+# Link-test constants. The contract never verifies these resolve to a real
+# deployed script anywhere (see design discussion: next_script_address /
+# next_policy_id are plain ByteArray pointers, not verified Address/
+# Credential types) - so any correctly-shaped bytes are valid here.
+TEST_FORWARD_SCRIPT_ADDRESS = bytes.fromhex("11" * 28)
+TEST_FORWARD_POLICY_ID = bytes.fromhex("22" * 28)
+TEST_FORWARD_LINK_REASON = b"test-forward-migration"
+TEST_FORWARD_LINKED_AT = 1_900_000_000
+TEST_FORWARD_INSTRUCTIONS = b'{"note": "test forward link, not a real deployment"}'
+
+TEST_BACKWARD_SCRIPT_ADDRESS = bytes.fromhex("33" * 28)
+TEST_BACKWARD_POLICY_ID = bytes.fromhex("44" * 28)
+TEST_BACKWARD_LINK_REASON = b"test-backward-migration"
+TEST_BACKWARD_LINKED_AT = 1_800_000_000
+TEST_BACKWARD_INSTRUCTIONS = b'{"note": "test backward link, not a real deployment"}'
+
+TEST_WITHDRAW_AMOUNT = 2_000_000  # 2 ADA, comfortably above min-UTxO for a plain-ADA output
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -478,6 +496,27 @@ def build_master_spend_tx(
             Asset({AssetName(master.beacon_asset_name): 1})
     })
 
+    # Master output's lovelace can't simply be carried forward unchanged:
+    # min-UTxO scales with output size (assets + inline datum bytes), and
+    # new_datum can be substantially bigger than old_datum was (e.g. once
+    # forward_link/backward_link hold a real DeploymentChainLink instead
+    # of None). Compute the actual minimum required for THIS output and
+    # use whichever is larger - the old flat amount, or the real minimum -
+    # so this never silently under-funds as the datum's shape evolves.
+    master_output = TransactionOutput(
+        address=master.registry_script_address,
+        amount=Value(coin=master.utxo.output.amount.coin, multi_asset=beacon_multi_asset),
+        datum=new_datum,
+    )
+    try:
+        from pycardano import min_lovelace_post_alonzo as _min_lovelace
+        min_required = _min_lovelace(master_output, context)
+    except ImportError:
+        from pycardano.utils import min_lovelace_post_alonzo as _min_lovelace
+        min_required = _min_lovelace(master_output, context)
+    master_coin = max(master.utxo.output.amount.coin, min_required)
+    master_output.amount = Value(coin=master_coin, multi_asset=beacon_multi_asset)
+
     builder = TransactionBuilder(context, ttl=context.last_block_slot + TTL_BUFFER_SLOTS)
     builder.add_input_address(funding_account.address)
     builder.add_script_input(
@@ -485,11 +524,7 @@ def build_master_spend_tx(
         script=registry_script,
         redeemer=Redeemer(redeemer_data),
     )
-    builder.add_output(TransactionOutput(
-        address=master.registry_script_address,
-        amount=Value(coin=master.utxo.output.amount.coin, multi_asset=beacon_multi_asset),
-        datum=new_datum,
-    ))
+    builder.add_output(master_output)
     for out in (extra_outputs or []):
         builder.add_output(out)
 
@@ -607,8 +642,22 @@ def test_mint_document(suite: Suite) -> tuple[bool, str, Optional[str]]:
     spend branch's full check list (signature, nonce, beacon carried
     forward, token datum cross-validation, stats update) AND the mint
     branch's checks (asset name prefix, beacon presence on the spent
-    master input) in one real transaction, since both validators run
-    together exactly as they would in production use.
+    master input, asset/datum/address co-location) in one real
+    transaction, since both validators run together exactly as they
+    would in production use.
+
+    The minted document token is sent to the REGISTRY SCRIPT'S OWN
+    ADDRESS, not any external wallet. This is a deliberate, permanent
+    design choice: document tokens are anti-censorship archive records,
+    never wallet-custodied or transferable. Once minted here, they
+    become structurally unspendable by anyone, forever - the spend
+    validator only ever attempts to decode a spent UTXO's datum as
+    MasterDatum, which a TokenDatum-shaped value can never satisfy. There
+    is no redeemer, no signature, no future action (not even by
+    authority) that can move a document token out of this address. This
+    isn't a policy choice enforced by convention - it's a structural
+    consequence of the validator's own decode logic, with no escape
+    valve anywhere in the design.
     """
     old_datum = suite.master.datum
     nonce = old_datum.nonce
@@ -681,7 +730,7 @@ def test_mint_document(suite: Suite) -> tuple[bool, str, Optional[str]]:
         ScriptHash(suite.master.registry_policy_id): Asset({AssetName(asset_name): 1})
     })
     token_output = TransactionOutput(
-        address=suite.funding_account.address,  # destination is caller-specified per the design doc
+        address=suite.master.registry_script_address,  # PERMANENT lock - never an external wallet
         amount=Value(coin=3_000_000, multi_asset=token_multi_asset),
         datum=token_datum,
     )
@@ -712,16 +761,468 @@ def test_mint_document(suite: Suite) -> tuple[bool, str, Optional[str]]:
     ), str(signed_tx.id)
 
 
-# ════════════════════════════════════════════════════════════════════════
-# main() - currently runs ONLY MintDocument, deliberately, to verify the
-# test harness itself before building more tests on top of it.
-# ════════════════════════════════════════════════════════════════════════
+def test_pause(suite: Suite) -> tuple[bool, str, Optional[str]]:
+    """
+    Exercises Pause: signed with authority_key. Spend-only branch, no
+    extra outputs - the master output is the entire transaction's
+    business. Confirms is_paused flips False->True and every other
+    field is preserved untouched.
+    """
+    old_datum = suite.master.datum
+    nonce = old_datum.nonce
+
+    signed_payload = int_to_be_bytes(nonce, 8) + b"PAUSE"
+    signature = sign_ed25519(suite.signing_keys.authority_private, signed_payload)
+
+    redeemer = Pause(nonce=nonce, signature=signature)
+
+    new_datum = MasterDatum(
+        authority_key=old_datum.authority_key,
+        operator_key=old_datum.operator_key,
+        owner_key=old_datum.owner_key,
+        owner_address=old_datum.owner_address,
+        nonce=nonce + 1,
+        is_paused=AikenTrue(),
+        policy_id=old_datum.policy_id,
+        asset_name_prefix=old_datum.asset_name_prefix,
+        beacon_policy_id=old_datum.beacon_policy_id,
+        beacon_asset_name=old_datum.beacon_asset_name,
+        forward_link=old_datum.forward_link,
+        backward_link=old_datum.backward_link,
+        stats=old_datum.stats,
+    )
+
+    builder = build_master_spend_tx(
+        suite.context, suite.funding_account, suite.master,
+        suite.registry_script, redeemer, new_datum,
+    )
+
+    try:
+        signed_tx = fund_and_sign(builder, suite.funding_account)
+        suite.context.submit_tx(signed_tx)
+    except Exception as e:
+        return False, f"Transaction failed unexpectedly: {e}", None
+
+    refresh_master(suite, expected_nonce=nonce + 1)
+    if suite.master.datum.nonce != nonce + 1:
+        return False, f"Nonce after pause is {suite.master.datum.nonce}, expected {nonce + 1}", str(signed_tx.id)
+    if not isinstance(suite.master.datum.is_paused, AikenTrue):
+        return False, f"is_paused after Pause is {suite.master.datum.is_paused}, expected AikenTrue", str(signed_tx.id)
+
+    return True, f"Paused, nonce {nonce}->{nonce+1}, is_paused=True", str(signed_tx.id)
+
+
+def test_resume(suite: Suite) -> tuple[bool, str, Optional[str]]:
+    """
+    Exercises Resume: signed with authority_key. Mirror of test_pause,
+    flipping is_paused True->False. Run immediately after test_pause so
+    the contract isn't left paused for any later test (or later run) that
+    needs MintDocument's `is_paused == False` precondition to hold.
+    """
+    old_datum = suite.master.datum
+    nonce = old_datum.nonce
+
+    signed_payload = int_to_be_bytes(nonce, 8) + b"RESUME"
+    signature = sign_ed25519(suite.signing_keys.authority_private, signed_payload)
+
+    redeemer = Resume(nonce=nonce, signature=signature)
+
+    new_datum = MasterDatum(
+        authority_key=old_datum.authority_key,
+        operator_key=old_datum.operator_key,
+        owner_key=old_datum.owner_key,
+        owner_address=old_datum.owner_address,
+        nonce=nonce + 1,
+        is_paused=AikenFalse(),
+        policy_id=old_datum.policy_id,
+        asset_name_prefix=old_datum.asset_name_prefix,
+        beacon_policy_id=old_datum.beacon_policy_id,
+        beacon_asset_name=old_datum.beacon_asset_name,
+        forward_link=old_datum.forward_link,
+        backward_link=old_datum.backward_link,
+        stats=old_datum.stats,
+    )
+
+    builder = build_master_spend_tx(
+        suite.context, suite.funding_account, suite.master,
+        suite.registry_script, redeemer, new_datum,
+    )
+
+    try:
+        signed_tx = fund_and_sign(builder, suite.funding_account)
+        suite.context.submit_tx(signed_tx)
+    except Exception as e:
+        return False, f"Transaction failed unexpectedly: {e}", None
+
+    refresh_master(suite, expected_nonce=nonce + 1)
+    if suite.master.datum.nonce != nonce + 1:
+        return False, f"Nonce after resume is {suite.master.datum.nonce}, expected {nonce + 1}", str(signed_tx.id)
+    if not isinstance(suite.master.datum.is_paused, AikenFalse):
+        return False, f"is_paused after Resume is {suite.master.datum.is_paused}, expected AikenFalse", str(signed_tx.id)
+
+    return True, f"Resumed, nonce {nonce}->{nonce+1}, is_paused=False", str(signed_tx.id)
+
+
+def _rotate_operator_key(suite: Suite, new_operator_pub: bytes) -> tuple[bool, str, Optional[str]]:
+    """
+    Shared body for one direction of the operator-key rotation. Signed
+    with authority_key, since RotateKey is an authority-only action
+    regardless of which key_type is being rotated.
+    """
+    old_datum = suite.master.datum
+    nonce = old_datum.nonce
+
+    signed_payload = (
+        int_to_be_bytes(nonce, 8) + b"ROTATE" + b"OPERATOR" + new_operator_pub
+    )
+    signature = sign_ed25519(suite.signing_keys.authority_private, signed_payload)
+
+    redeemer = RotateKey(
+        nonce=nonce,
+        key_type=OperatorKeyTag(),
+        new_key=new_operator_pub,
+        signature=signature,
+    )
+
+    new_datum = MasterDatum(
+        authority_key=old_datum.authority_key,
+        operator_key=new_operator_pub,
+        owner_key=old_datum.owner_key,
+        owner_address=old_datum.owner_address,
+        nonce=nonce + 1,
+        is_paused=old_datum.is_paused,
+        policy_id=old_datum.policy_id,
+        asset_name_prefix=old_datum.asset_name_prefix,
+        beacon_policy_id=old_datum.beacon_policy_id,
+        beacon_asset_name=old_datum.beacon_asset_name,
+        forward_link=old_datum.forward_link,
+        backward_link=old_datum.backward_link,
+        stats=old_datum.stats,
+    )
+
+    builder = build_master_spend_tx(
+        suite.context, suite.funding_account, suite.master,
+        suite.registry_script, redeemer, new_datum,
+    )
+
+    try:
+        signed_tx = fund_and_sign(builder, suite.funding_account)
+        suite.context.submit_tx(signed_tx)
+    except Exception as e:
+        return False, f"Transaction failed unexpectedly: {e}", None
+
+    refresh_master(suite, expected_nonce=nonce + 1)
+    if suite.master.datum.nonce != nonce + 1:
+        return False, f"Nonce after rotate is {suite.master.datum.nonce}, expected {nonce + 1}", str(signed_tx.id)
+    if suite.master.datum.operator_key != new_operator_pub:
+        return False, "operator_key did not update to the expected new key", str(signed_tx.id)
+
+    return True, f"Rotated operator_key, nonce {nonce}->{nonce+1}", str(signed_tx.id)
+
+
+def test_rotate_key_operator_roundtrip(suite: Suite) -> tuple[bool, str, Optional[str]]:
+    """
+    Exercises RotateKey for the OperatorKey case in both directions in a
+    single test: rotate to a freshly generated throwaway keypair, confirm
+    it landed, then rotate back to the ORIGINAL operator key from
+    perm_keys.json. This keeps the on-chain operator_key consistent with
+    perm_keys.json after the test finishes, so later runs (including
+    MintDocument, which signs with operator_private from perm_keys.json)
+    keep working without needing perm_keys.json regenerated/updated.
+
+    AuthorityKey/OwnerKey rotation aren't covered here (same validator
+    logic path, different key_type branch) - operator round-trip alone
+    confirms RotateKey's signature/nonce/static-field-preservation checks
+    all work correctly on a real on-chain transaction.
+    """
+    from nacl.signing import SigningKey as _SigningKey
+
+    original_operator_pub = suite.signing_keys.operator_public
+    throwaway_signing_key = _SigningKey.generate()
+    throwaway_pub = bytes(throwaway_signing_key.verify_key)
+
+    ok, detail, tx_id = _rotate_operator_key(suite, throwaway_pub)
+    if not ok:
+        return False, f"[rotate to throwaway] {detail}", tx_id
+
+    ok2, detail2, tx_id2 = _rotate_operator_key(suite, original_operator_pub)
+    if not ok2:
+        return False, (
+            f"[rotate to throwaway] succeeded, but [rotate back to original] failed: {detail2}. "
+            f"WARNING: on-chain operator_key is now the throwaway key, NOT what's in perm_keys.json "
+            f"- subsequent MintDocument runs will fail to sign correctly until this is manually fixed."
+        ), tx_id2
+
+    return True, (
+        f"Operator key round-trip confirmed: original -> throwaway -> original. "
+        f"[{detail}] then [{detail2}]"
+    ), tx_id2
+
+
+def test_link_forward(suite: Suite) -> tuple[bool, str, Optional[str]]:
+    """
+    Exercises LinkForward: signed with authority_key. PERMANENT, ONE-TIME
+    ONLY per live deployment - the contract enforces old_datum.forward_link
+    == None as a hard precondition, with no mechanism to reset it. This
+    test will correctly FAIL (precondition violated, not a bug) if run a
+    second time against the same devnet state without a fresh genesis
+    redeploy in between - that's the contract's lockout guard working as
+    designed, not a test harness problem.
+
+    next_script_address / next_policy_id are arbitrary test bytes, not a
+    real second deployment - the contract has no way to verify these
+    resolve to anything real (see ByteArray-vs-Address design discussion),
+    so this fully exercises the validator's actual guarantee: a
+    permanently locked, signature-authenticated pointer, nothing more.
+    """
+    old_datum = suite.master.datum
+    nonce = old_datum.nonce
+
+    if not isinstance(old_datum.forward_link, NoneChainLink):
+        return False, (
+            "Precondition failed: forward_link is already set (not None). "
+            "LinkForward is a one-time-only action per deployment - redeploy "
+            "genesis fresh on devnet to test this again."
+        ), None
+
+    signed_payload = (
+        int_to_be_bytes(nonce, 8)
+        + TEST_FORWARD_POLICY_ID
+        + TEST_FORWARD_SCRIPT_ADDRESS
+        + TEST_FORWARD_LINK_REASON
+    )
+    signature = sign_ed25519(suite.signing_keys.authority_private, signed_payload)
+
+    redeemer = LinkForward(
+        nonce=nonce,
+        next_script_address=TEST_FORWARD_SCRIPT_ADDRESS,
+        next_policy_id=TEST_FORWARD_POLICY_ID,
+        link_reason=TEST_FORWARD_LINK_REASON,
+        linked_at=TEST_FORWARD_LINKED_AT,
+        instructions=TEST_FORWARD_INSTRUCTIONS,
+        signature=signature,
+    )
+
+    chain_link = DeploymentChainLink(
+        next_script_address=TEST_FORWARD_SCRIPT_ADDRESS,
+        next_policy_id=TEST_FORWARD_POLICY_ID,
+        link_reason=TEST_FORWARD_LINK_REASON,
+        linked_at=TEST_FORWARD_LINKED_AT,
+        instructions=TEST_FORWARD_INSTRUCTIONS,
+        current_authority_key=old_datum.authority_key,
+        signature=signature,
+        nonce_at_link=nonce,
+    )
+
+    new_datum = MasterDatum(
+        authority_key=old_datum.authority_key,
+        operator_key=old_datum.operator_key,
+        owner_key=old_datum.owner_key,
+        owner_address=old_datum.owner_address,
+        nonce=nonce + 1,
+        is_paused=old_datum.is_paused,
+        policy_id=old_datum.policy_id,
+        asset_name_prefix=old_datum.asset_name_prefix,
+        beacon_policy_id=old_datum.beacon_policy_id,
+        beacon_asset_name=old_datum.beacon_asset_name,
+        forward_link=SomeChainLink(value=chain_link),
+        backward_link=old_datum.backward_link,
+        stats=old_datum.stats,
+    )
+
+    builder = build_master_spend_tx(
+        suite.context, suite.funding_account, suite.master,
+        suite.registry_script, redeemer, new_datum,
+    )
+
+    try:
+        signed_tx = fund_and_sign(builder, suite.funding_account)
+        suite.context.submit_tx(signed_tx)
+    except Exception as e:
+        return False, f"Transaction failed unexpectedly: {e}", None
+
+    refresh_master(suite, expected_nonce=nonce + 1)
+    if suite.master.datum.nonce != nonce + 1:
+        return False, f"Nonce after LinkForward is {suite.master.datum.nonce}, expected {nonce + 1}", str(signed_tx.id)
+    if not isinstance(suite.master.datum.forward_link, SomeChainLink):
+        return False, "forward_link is not set after LinkForward", str(signed_tx.id)
+    linked = suite.master.datum.forward_link.value
+    if linked.next_script_address != TEST_FORWARD_SCRIPT_ADDRESS or linked.next_policy_id != TEST_FORWARD_POLICY_ID:
+        return False, "forward_link fields don't match what was submitted", str(signed_tx.id)
+
+    return True, f"Linked forward, nonce {nonce}->{nonce+1}, forward_link set permanently", str(signed_tx.id)
+
+
+def test_link_backward(suite: Suite) -> tuple[bool, str, Optional[str]]:
+    """
+    Exercises LinkBackward: signed with authority_key. Mirror of
+    test_link_forward, writing to backward_link instead - same permanent,
+    one-time-only constraint (old_datum.backward_link must be None),
+    same caveat about re-running without a fresh devnet redeploy.
+
+    Note the Aiken branch reuses DeploymentChainLink's `next_script_address`
+    / `next_policy_id` field names to store what are semantically the
+    PREVIOUS deployment's pointers (see registry_contract.ak's LinkBackward
+    branch: `expect link.next_script_address == prev_script_address`) -
+    that's the contract's own naming choice, not a test-harness mismatch.
+    """
+    old_datum = suite.master.datum
+    nonce = old_datum.nonce
+
+    if not isinstance(old_datum.backward_link, NoneChainLink):
+        return False, (
+            "Precondition failed: backward_link is already set (not None). "
+            "LinkBackward is a one-time-only action per deployment - redeploy "
+            "genesis fresh on devnet to test this again."
+        ), None
+
+    signed_payload = (
+        int_to_be_bytes(nonce, 8)
+        + TEST_BACKWARD_POLICY_ID
+        + TEST_BACKWARD_SCRIPT_ADDRESS
+        + TEST_BACKWARD_LINK_REASON
+    )
+    signature = sign_ed25519(suite.signing_keys.authority_private, signed_payload)
+
+    redeemer = LinkBackward(
+        nonce=nonce,
+        prev_script_address=TEST_BACKWARD_SCRIPT_ADDRESS,
+        prev_policy_id=TEST_BACKWARD_POLICY_ID,
+        link_reason=TEST_BACKWARD_LINK_REASON,
+        linked_at=TEST_BACKWARD_LINKED_AT,
+        instructions=TEST_BACKWARD_INSTRUCTIONS,
+        signature=signature,
+    )
+
+    chain_link = DeploymentChainLink(
+        next_script_address=TEST_BACKWARD_SCRIPT_ADDRESS,  # semantically "prev" here, per contract's field reuse
+        next_policy_id=TEST_BACKWARD_POLICY_ID,
+        link_reason=TEST_BACKWARD_LINK_REASON,
+        linked_at=TEST_BACKWARD_LINKED_AT,
+        instructions=TEST_BACKWARD_INSTRUCTIONS,
+        current_authority_key=old_datum.authority_key,
+        signature=signature,
+        nonce_at_link=nonce,
+    )
+
+    new_datum = MasterDatum(
+        authority_key=old_datum.authority_key,
+        operator_key=old_datum.operator_key,
+        owner_key=old_datum.owner_key,
+        owner_address=old_datum.owner_address,
+        nonce=nonce + 1,
+        is_paused=old_datum.is_paused,
+        policy_id=old_datum.policy_id,
+        asset_name_prefix=old_datum.asset_name_prefix,
+        beacon_policy_id=old_datum.beacon_policy_id,
+        beacon_asset_name=old_datum.beacon_asset_name,
+        forward_link=old_datum.forward_link,
+        backward_link=SomeChainLink(value=chain_link),
+        stats=old_datum.stats,
+    )
+
+    builder = build_master_spend_tx(
+        suite.context, suite.funding_account, suite.master,
+        suite.registry_script, redeemer, new_datum,
+    )
+
+    try:
+        signed_tx = fund_and_sign(builder, suite.funding_account)
+        suite.context.submit_tx(signed_tx)
+    except Exception as e:
+        return False, f"Transaction failed unexpectedly: {e}", None
+
+    refresh_master(suite, expected_nonce=nonce + 1)
+    if suite.master.datum.nonce != nonce + 1:
+        return False, f"Nonce after LinkBackward is {suite.master.datum.nonce}, expected {nonce + 1}", str(signed_tx.id)
+    if not isinstance(suite.master.datum.backward_link, SomeChainLink):
+        return False, "backward_link is not set after LinkBackward", str(signed_tx.id)
+    linked = suite.master.datum.backward_link.value
+    if linked.next_script_address != TEST_BACKWARD_SCRIPT_ADDRESS or linked.next_policy_id != TEST_BACKWARD_POLICY_ID:
+        return False, "backward_link fields don't match what was submitted", str(signed_tx.id)
+
+    return True, f"Linked backward, nonce {nonce}->{nonce+1}, backward_link set permanently", str(signed_tx.id)
+
+
+def test_withdraw(suite: Suite) -> tuple[bool, str, Optional[str]]:
+    """
+    Exercises Withdraw: signed with owner_key. Requires a SEPARATE
+    transaction output paying exactly TEST_WITHDRAW_AMOUNT lovelace to
+    old_datum.owner_address (checked via list.any over self.outputs in
+    the validator). owner_address was set at genesis bootstrap to the
+    funding wallet's own address (confirmed by comparing its decoded
+    payment/stake credential hashes against the funding wallet's), so
+    suite.funding_account.address is used directly as the payout
+    destination - it's the same address, just expressed as a real
+    pycardano Address rather than the raw on-chain Plutus Address bytes.
+
+    The master output itself keeps a flat lovelace balance (same pattern
+    as every other test here, via build_master_spend_tx) - the withdrawal
+    payment's lovelace is sourced from the funding wallet's own UTxOs via
+    coin selection, same as transaction fees always are. This is correct
+    for exercising the validator's actual on-chain guarantee (a real,
+    exact-amount payment to the locked owner_address occurred,
+    authenticated by the owner_key signature) even though, unlike a
+    production deployment that accumulates real revenue in the master
+    UTXO, this devnet master UTXO was never funded with anything to
+    "withdraw" from in a literal treasury sense.
+    """
+    old_datum = suite.master.datum
+    nonce = old_datum.nonce
+    amount = TEST_WITHDRAW_AMOUNT
+
+    signed_payload = (
+        int_to_be_bytes(nonce, 8) + b"WITHDRAW" + int_to_be_bytes(amount, 8)
+    )
+    signature = sign_ed25519(suite.signing_keys.owner_private, signed_payload)
+
+    redeemer = Withdraw(nonce=nonce, amount=amount, signature=signature)
+
+    new_datum = MasterDatum(
+        authority_key=old_datum.authority_key,
+        operator_key=old_datum.operator_key,
+        owner_key=old_datum.owner_key,
+        owner_address=old_datum.owner_address,
+        nonce=nonce + 1,
+        is_paused=old_datum.is_paused,
+        policy_id=old_datum.policy_id,
+        asset_name_prefix=old_datum.asset_name_prefix,
+        beacon_policy_id=old_datum.beacon_policy_id,
+        beacon_asset_name=old_datum.beacon_asset_name,
+        forward_link=old_datum.forward_link,
+        backward_link=old_datum.backward_link,
+        stats=old_datum.stats,
+    )
+
+    withdrawal_output = TransactionOutput(
+        address=suite.funding_account.address,
+        amount=Value(coin=amount),
+    )
+
+    builder = build_master_spend_tx(
+        suite.context, suite.funding_account, suite.master,
+        suite.registry_script, redeemer, new_datum,
+        extra_outputs=[withdrawal_output],
+    )
+
+    try:
+        signed_tx = fund_and_sign(builder, suite.funding_account)
+        suite.context.submit_tx(signed_tx)
+    except Exception as e:
+        return False, f"Transaction failed unexpectedly: {e}", None
+
+    refresh_master(suite, expected_nonce=nonce + 1)
+    if suite.master.datum.nonce != nonce + 1:
+        return False, f"Nonce after withdraw is {suite.master.datum.nonce}, expected {nonce + 1}", str(signed_tx.id)
+
+    return True, f"Withdrew {amount} lovelace to owner_address, nonce {nonce}->{nonce+1}", str(signed_tx.id)
+
 
 def main() -> int:
     runner = TestRunner()
 
     print("=== ZPEPG archive_registry.ak - Real On-Chain Test Suite ===")
-    print(f"(stage: harness verification - MintDocument only)\n")
+    print(f"(stage: MintDocument, Pause, Resume, RotateKey, LinkForward, LinkBackward, Withdraw)\n")
 
     try:
         suite = setup()
@@ -734,6 +1235,42 @@ def main() -> int:
         name="MintDocument - happy path",
         expect_success=True,
         fn=lambda: test_mint_document(suite),
+    )
+
+    runner.run(
+        name="Pause - happy path",
+        expect_success=True,
+        fn=lambda: test_pause(suite),
+    )
+
+    runner.run(
+        name="Resume - happy path",
+        expect_success=True,
+        fn=lambda: test_resume(suite),
+    )
+
+    runner.run(
+        name="RotateKey (OperatorKey) - round-trip",
+        expect_success=True,
+        fn=lambda: test_rotate_key_operator_roundtrip(suite),
+    )
+
+    runner.run(
+        name="LinkForward - happy path (one-time only)",
+        expect_success=True,
+        fn=lambda: test_link_forward(suite),
+    )
+
+    runner.run(
+        name="LinkBackward - happy path (one-time only)",
+        expect_success=True,
+        fn=lambda: test_link_backward(suite),
+    )
+
+    runner.run(
+        name="Withdraw - happy path",
+        expect_success=True,
+        fn=lambda: test_withdraw(suite),
     )
 
     runner.write_report(REPORT_PATH)

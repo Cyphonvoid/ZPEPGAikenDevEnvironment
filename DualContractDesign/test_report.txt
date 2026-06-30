@@ -1,0 +1,62 @@
+==============================================================================
+ZPEPG ARCHIVE REGISTRY - ON-CHAIN INTEGRATION TEST REPORT
+==============================================================================
+Started:  2026-06-30T10:48:01.917473+00:00
+Finished: 2026-06-30T10:49:28.029255+00:00
+Total duration: 86.11s
+
+TOTAL: 7   PASSED: 7   FAILED: 0
+==============================================================================
+
+[1/7] PASS  MintDocument - happy path
+    expected:  should succeed
+    duration:  1.74s
+    tx_id:     ca239f1358e712352352ec8003682eac33d76dc483bb84f3ab63268cc15b5d5c
+    detail:    Minted document, nonce 0->1, total_token_count=1
+
+[2/7] PASS  Pause - happy path
+    expected:  should succeed
+    duration:  1.60s
+    tx_id:     2cbc43ea82c294ad6064f552c5ec0fc1fea55f4a589c076cb3579204d2f35206
+    detail:    Paused, nonce 1->2, is_paused=True
+
+[3/7] PASS  Resume - happy path
+    expected:  should succeed
+    duration:  1.29s
+    tx_id:     0fe6d6b249ae804142e0f3420aa731a0b97d245905e705963cc5c2a6e6e4ad68
+    detail:    Resumed, nonce 2->3, is_paused=False
+
+[4/7] PASS  RotateKey (OperatorKey) - round-trip
+    expected:  should succeed
+    duration:  2.68s
+    tx_id:     63d0965b6e57680d00bec699afdc4b495166dfbf43612c2d7644a097982b4ba9
+    detail:    Operator key round-trip confirmed: original -> throwaway -> original. [Rotated operator_key, nonce 3->4] then [Rotated operator_key, nonce 4->5]
+
+[5/7] PASS  LinkForward - happy path (one-time only)
+    expected:  should succeed
+    duration:  1.35s
+    tx_id:     346f666bd7d86e9c1e618f88414d55f14f7fd1ed248d84ff7adc68bff3d87d42
+    detail:    Linked forward, nonce 5->6, forward_link set permanently
+
+[6/7] PASS  LinkBackward - happy path (one-time only)
+    expected:  should succeed
+    duration:  1.33s
+    tx_id:     bdaacfa3a21bfdc01f18184bbc3de5e6c4dd7630e1e5a33c3513f8647d359714
+    detail:    Linked backward, nonce 6->7, backward_link set permanently
+
+[7/7] PASS  Withdraw - happy path
+    expected:  should succeed
+    duration:  1.31s
+    tx_id:     d369314f4265f4dba6041f993bdb39e7bf88d6a79bd4cbc42da14e2357f30773
+    detail:    Withdrew 2000000 lovelace to owner_address, nonce 7->8
+
+==============================================================================
+SUMMARY
+==============================================================================
+  PASS  MintDocument - happy path
+  PASS  Pause - happy path
+  PASS  Resume - happy path
+  PASS  RotateKey (OperatorKey) - round-trip
+  PASS  LinkForward - happy path (one-time only)
+  PASS  LinkBackward - happy path (one-time only)
+  PASS  Withdraw - happy path

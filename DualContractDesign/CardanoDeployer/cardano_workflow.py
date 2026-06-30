@@ -32,12 +32,12 @@ from pycardano import (
 from pycardano.backend.base import ChainContext
 from pycardano.plutus import ExecutionUnits
 
-from CardanoDeployer.cardano_types import (
+from DualContractDesign.CardanoDeployer.cardano_types import (
     AikenFalse, InlineStakeCredential, MasterDatum, MintBeacon,
     NoneChainLink, OutputReference, PlutusAddress, RegistryStats,
     SomeStakeCredential, VerificationKeyCredential,
 )
-from CardanoDeployer.cardano_network import NetworkBackend, NetworkError, UtxoInfo
+from DualContractDesign.CardanoDeployer.cardano_network import NetworkBackend, NetworkError, UtxoInfo
 
 
 # ═══════════════════════════════════════════════════════════════════════════

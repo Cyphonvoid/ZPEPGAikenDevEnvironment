@@ -28,7 +28,7 @@ from typing import Union
 
 from pycardano import PlutusData
 
-from CardanoDeployer.cardano_types import OutputReference, AikenBool
+from DualContractDesign.CardanoDeployer.cardano_types import OutputReference, AikenBool
 
 
 # ── registry_contract.TokenDatum ──────────────────────────────────────────

@@ -19,16 +19,50 @@
 // from the real master UTXO, because datum fields are just data and can
 // always be copied verbatim.
 //
-// This version replaces self-referential datum-field checking with a
-// beacon token (see beacon_policy.ak): a single native asset, minted
-// exactly once at genesis under a one-shot policy, that must be carried
-// forward into every successor master UTXO. "The canonical master UTXO" is
-// defined as "whichever UTXO holds this exact token" — a ledger-enforced,
-// non-copyable fact, since eUTXO guarantees a given native asset unit can
-// only ever sit in one place at a time. Decoys cannot acquire the beacon:
-// they cannot mint a copy (the policy cannot fire twice, ever, for anyone),
-// and they cannot obtain the existing unit without spending the real master
-// UTXO, which requires the real signing keys.
+// This contract closes that gap with a beacon token: a single native asset,
+// minted exactly once at genesis, that must be carried forward into every
+// successor master UTXO. "The canonical master UTXO" is defined as
+// "whichever UTXO holds this exact token" — a ledger-enforced, non-copyable
+// fact, since eUTXO guarantees a given native asset unit can only ever sit
+// in one place at a time. Decoys cannot acquire the beacon: they cannot
+// mint a copy (this script's MintBeacon redeemer can only ever fire once,
+// ever — see below), and they cannot obtain the existing unit without
+// spending the real master UTXO, which requires the real signing keys.
+//
+// ── SINGLE-SCRIPT ARCHITECTURE (formerly two contracts) ────────────────────
+// Earlier revisions of this system split beacon minting into its own
+// separate script (beacon_contract.ak / beacon_policy.ak), compiled first
+// against a chosen genesis UTXO, with its resulting policy ID then baked
+// into a SEPARATE compilation of this registry script. That worked, but
+// required careful two-stage deployment sequencing (beacon must compile and
+// its policy ID become known BEFORE registry compilation can even begin)
+// and meant tracking two coordinated script artifacts, two addresses, two
+// policy IDs per deployment.
+//
+// This version collapses both into ONE script. archive_registry is itself
+// parameterized at compile time by a genesis OutputReference and a fixed
+// beacon_asset_name (see the `validator archive_registry(...)` declaration
+// below) — exactly the same one-shot-minting pattern beacon_contract.ak
+// used on its own, just folded directly into this script's own `mint`
+// entrypoint as the MintBeacon redeemer variant. Since it's all one script,
+// the beacon's policy ID and the registry's own policy ID are now the SAME
+// value — there is nothing left to coordinate or hand off between two
+// artifacts. MasterDatum no longer needs to carry beacon_policy_id /
+// beacon_asset_name fields at all, since "is this the canonical UTXO" is
+// now answered by checking against the script's OWN identity (derived from
+// whatever address the spent master UTXO is locked at, which can only ever
+// be this script's own address) and the compile-time-fixed asset name,
+// rather than trusting a field read out of a datum.
+//
+// Genesis is now a single atomic step: spend the genesis UTXO (a normal,
+// wallet-key-locked UTXO — its owner's signature on that input IS the
+// authorization, no separate authority-key signature is needed for the
+// one-shot beacon mint itself), mint the beacon under this script's own
+// policy via the MintBeacon redeemer, and send the resulting output
+// straight to this script's own address carrying the initial MasterDatum.
+// No separate "registry bootstrap" stage exists anymore - the spend
+// validator is never even invoked during genesis, since nothing is being
+// spent FROM the script yet at that point.
 //
 // ── CARDANO SECURITY & ACCESS CONTROL HIERARCHY
 // The contract enforces a strict, multi-tiered cryptographic signature
@@ -42,6 +76,21 @@
 //   - Owner Key/Address: The vault identity restricted entirely to signing
 //     off on fund withdrawals, ensuring assets can only exit to a
 //     hardcoded destination.
+//
+// ── DOCUMENT TOKEN PERMANENCE ────────────────────────────────────────────
+// Minted document tokens are sent to THIS SCRIPT'S OWN ADDRESS, never to
+// any external wallet. They are anti-censorship archive records, not a
+// currency or collectible - never transferable, never wallet-custodied.
+// Once minted here, a document token becomes structurally unspendable by
+// anyone, forever: the spend validator below only ever attempts to decode
+// a spent UTXO's datum as MasterDatum, which a TokenDatum-shaped value can
+// never satisfy. There is no redeemer, no signature, no future action -
+// not even by authority - that can move a document token out of this
+// address. This is a deliberate, permanent, one-way design choice with no
+// escape valve anywhere in this script. A future migration, if ever
+// needed, happens via LinkForward/LinkBackward at the registry level
+// (chaining to a freshly deployed successor), never by relocating an
+// existing document token.
 //
 // =============================================================================
 // CORE FUNCTIONALITIES AND KEY FEATURES:
@@ -57,7 +106,8 @@
 //    permits document creation only if signed by the operator, matching the
 //    state nonce, and ensures the accompanying token output embeds a
 //    structured, tamper-proof metadata payload (SHA256 hash, version number,
-//    data bytes).
+//    data bytes) AND co-locates the actual minted asset with that exact
+//    payload, permanently locked at this script's own address.
 //
 // 3. CIRCUIT-BREAKER LIFECYCLE CONTROLS (`Pause` / `Resume`)
 //    Enables the primary authority to immediately freeze all minting
@@ -109,6 +159,11 @@ pub type RegistryStats {
 }
 
 // ── Master Registry Datum ────────────────────────────────────────────────
+// NOTE: beacon_policy_id / beacon_asset_name are deliberately NOT fields
+// here anymore. "What counts as the beacon" is now a compile-time fact
+// (this script's own policy ID + the beacon_asset_name parameter below),
+// never something read out of a datum - removing the last self-referential
+// trust dependency from canonical-identity discovery.
 pub type MasterDatum {
   // ── REGISTRY ACCESS & CONFIGURATION ────────────────────────────────────
   authority_key: VerificationKey,
@@ -121,16 +176,6 @@ pub type MasterDatum {
   // ── SYSTEM IDENTIFIERS & POINTERS ──────────────────────────────────────
   policy_id: ByteArray,
   asset_name_prefix: ByteArray,
-
-  // ── BEACON IDENTITY ─────────────────────────────────────────────────────
-  // The native asset that marks this UTXO as canonical. Minted exactly once
-  // at genesis by beacon_policy.ak. Every spend branch below requires this
-  // exact unit to be present in the new master output's Value — see
-  // require_beacon_carried_forward. These two fields are immutable for the
-  // lifetime of a given deployment; they are never reassigned by any
-  // redeemer.
-  beacon_policy_id: ByteArray,
-  beacon_asset_name: ByteArray,
 
   // ── TWO-WAY DEPLOYMENT CHAIN LINKS ─────────────────────────────────────
   forward_link: Option<DeploymentChainLink>,
@@ -219,9 +264,13 @@ pub type KeyType {
 }
 
 // ── Mint Policy Redeemer ─────────────────────────────────────────────────
+// MintBeacon is new here: the one-shot genesis mint, formerly
+// beacon_contract.ak's entire reason for existing, now just one more
+// redeemer variant on this same script's mint entrypoint.
 pub type CreateTokenAction {
   MintToken
   BurnToken
+  MintBeacon
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────
@@ -232,12 +281,29 @@ fn find_master_input(inputs: List<Input>, own_ref: OutputReference) -> Output {
   input.output
 }
 
+// Extracts this script's own policy/script hash from an Output that is
+// known to be locked at this script's address (e.g. the spent master
+// input). Since the master UTXO can only ever be locked at THIS script's
+// own address (that's what "spending it via this validator" means), this
+// is a reliable way to recover "my own identity" from within spend()
+// without needing it passed in as a separate parameter - mint() gets it
+// for free as its own `policy_id` handler argument, this is spend()'s
+// equivalent.
+fn own_script_hash(addr: Address) -> ByteArray {
+  when addr.payment_credential is {
+    Script(h) -> h
+    _ -> fail @"Master UTXO is not locked at a script address - this should never happen"
+  }
+}
+
 // Finds the new master UTXO output by beacon-token membership rather than
 // by address match. This is the discovery primitive that replaces self_ref:
 // "the new master output" is now defined as "whichever output in this
 // transaction holds the beacon," which is unambiguous regardless of how
 // many decoy outputs to the same script address might also exist in this
-// transaction or sit unspent elsewhere at the address.
+// transaction or sit unspent elsewhere at the address. beacon_policy_id
+// here is always THIS script's own policy ID (derived via own_script_hash
+// or passed directly as `policy_id` in mint), never a datum-supplied value.
 fn find_master_output_by_beacon(
   outputs: List<Output>,
   beacon_policy_id: ByteArray,
@@ -257,27 +323,40 @@ fn find_master_output_by_beacon(
 fn find_token_output_with_datum(
   outputs: List<Output>,
   policy_id: ByteArray,
+  asset_name: ByteArray,
   beacon_policy_id: ByteArray,
   beacon_asset_name: ByteArray,
+  script_address: Address,
 ) -> TokenDatum {
   when outputs is {
-    [] -> fail @"Token output with inline TokenDatum not found"
+    [] -> fail @"Token output co-locating the minted asset with a matching TokenDatum, locked at the registry's own address, not found"
     [head, ..tail] -> {
       let holds_beacon =
         assets.quantity_of(head.value, beacon_policy_id, beacon_asset_name) == 1
       if holds_beacon {
-        find_token_output_with_datum(tail, policy_id, beacon_policy_id, beacon_asset_name)
+        find_token_output_with_datum(tail, policy_id, asset_name, beacon_policy_id, beacon_asset_name, script_address)
       } else {
         when head.datum is {
           InlineDatum(datum_data) -> {
             expect token_datum: TokenDatum = datum_data
-            if token_datum.policy_id == policy_id {
+            // Requires the candidate output to ACTUALLY HOLD the minted
+            // asset, not merely carry a correctly-shaped TokenDatum
+            // claiming to describe it. Without this, an output with a
+            // convincing-but-fake TokenDatum and zero real tokens could
+            // be mistaken for the genuine token output, while the real
+            // asset silently lands somewhere else undocumented in the
+            // same transaction.
+            let holds_asset = assets.quantity_of(head.value, policy_id, asset_name) == 1
+            // Requires the candidate output to sit AT THE REGISTRY'S OWN
+            // SCRIPT ADDRESS - see "DOCUMENT TOKEN PERMANENCE" header note.
+            let at_registry_address = head.address == script_address
+            if token_datum.policy_id == policy_id && holds_asset && at_registry_address {
               token_datum
             } else {
-              find_token_output_with_datum(tail, policy_id, beacon_policy_id, beacon_asset_name)
+              find_token_output_with_datum(tail, policy_id, asset_name, beacon_policy_id, beacon_asset_name, script_address)
             }
           }
-          _ -> find_token_output_with_datum(tail, policy_id, beacon_policy_id, beacon_asset_name)
+          _ -> find_token_output_with_datum(tail, policy_id, asset_name, beacon_policy_id, beacon_asset_name, script_address)
         }
       }
     }
@@ -291,21 +370,33 @@ fn datum_from_output(output: Output) -> MasterDatum {
 }
 
 // Requires that the beacon token is present in the given output's Value,
-// in exactly the quantity 1, under the policy_id/asset_name recorded in
-// old_datum. Called in every spend branch to guarantee the beacon is
-// always carried forward into the successor master UTXO — never dropped,
-// never duplicated, never left behind.
-fn require_beacon_carried_forward(output: Output, old_datum: MasterDatum) {
-  expect assets.quantity_of(
-    output.value,
-    old_datum.beacon_policy_id,
-    old_datum.beacon_asset_name,
-  ) == 1
+// in exactly the quantity 1, under THIS script's own policy ID and the
+// compile-time-fixed beacon_asset_name. Called in every spend branch to
+// guarantee the beacon is always carried forward into the successor
+// master UTXO — never dropped, never duplicated, never left behind.
+fn require_beacon_carried_forward(
+  output: Output,
+  beacon_policy_id: ByteArray,
+  beacon_asset_name: ByteArray,
+) {
+  expect assets.quantity_of(output.value, beacon_policy_id, beacon_asset_name) == 1
 }
 
 // ── Spend Validator ──────────────────────────────────────────────────────
-
-validator archive_registry {
+//
+// Parameterized by:
+//   genesis_ref       - the specific UTXO that must be spent to perform the
+//                        one-shot MintBeacon mint (see mint() below). Baked
+//                        into this script's compiled bytecode/hash, fixed
+//                        forever once compiled - never something read from
+//                        any datum or redeemer.
+//   beacon_asset_name - the fixed asset name under which the beacon is
+//                        minted. Also baked in at compile time. Allowed to
+//                        vary BETWEEN deployments (e.g. a "-TEST" suffix
+//                        for devnet vs a plain name for production), while
+//                        still being immutable WITHIN any single deployed
+//                        instance of this script.
+validator archive_registry(genesis_ref: OutputReference, beacon_asset_name: ByteArray) {
 
   spend(
     datum: Option<MasterDatum>,
@@ -326,6 +417,12 @@ validator archive_registry {
     // it, but it can never produce a new output that satisfies
     // require_beacon_carried_forward unless the real beacon is sacrificed
     // into it — which would require spending the real master UTXO.
+
+    // This script's own policy/script hash, derived from the address the
+    // spent master UTXO is itself locked at. Used everywhere below in
+    // place of the old datum-supplied beacon_policy_id field.
+    let master_input = find_master_input(self.inputs, own_ref)
+    let own_policy_id = own_script_hash(master_input.output.address)
 
     when redeemer is {
       MintDocument {
@@ -360,22 +457,28 @@ validator archive_registry {
           signature,
         )
 
-        let master_input = find_master_input(self.inputs, own_ref)
         let new_output =
-          find_master_output_by_beacon(
-            self.outputs,
-            old_datum.beacon_policy_id,
-            old_datum.beacon_asset_name,
-          )
+          find_master_output_by_beacon(self.outputs, own_policy_id, beacon_asset_name)
         let new_datum = datum_from_output(new_output)
-        require_beacon_carried_forward(new_output, old_datum)
+        require_beacon_carried_forward(new_output, own_policy_id, beacon_asset_name)
+
+        // asset_name comes from self.mint - the transaction's own literal
+        // minting field - rather than from any candidate output's datum,
+        // since trusting a datum-supplied asset_name to then go find "the"
+        // output with that datum would be circular and defeats the point
+        // of the presence check inside find_token_output_with_datum.
+        let minted_assets = assets.tokens(self.mint, old_datum.policy_id)
+        expect [Pair(asset_name, mint_quantity)] = dict.to_pairs(minted_assets)
+        expect mint_quantity == 1
 
         let token_output_datum =
           find_token_output_with_datum(
             self.outputs,
             old_datum.policy_id,
-            old_datum.beacon_policy_id,
-            old_datum.beacon_asset_name,
+            asset_name,
+            own_policy_id,
+            beacon_asset_name,
+            new_output.address,
           )
 
         // Validate Token Setup (Pillar 2 Extensions)
@@ -409,8 +512,6 @@ validator archive_registry {
         expect new_datum.is_paused == old_datum.is_paused
         expect new_datum.policy_id == old_datum.policy_id
         expect new_datum.asset_name_prefix == old_datum.asset_name_prefix
-        expect new_datum.beacon_policy_id == old_datum.beacon_policy_id
-        expect new_datum.beacon_asset_name == old_datum.beacon_asset_name
         expect new_datum.forward_link == old_datum.forward_link
         expect new_datum.backward_link == old_datum.backward_link
 
@@ -424,13 +525,9 @@ validator archive_registry {
         expect verify_ed25519_signature(old_datum.authority_key, signed_payload, signature)
 
         let new_output =
-          find_master_output_by_beacon(
-            self.outputs,
-            old_datum.beacon_policy_id,
-            old_datum.beacon_asset_name,
-          )
+          find_master_output_by_beacon(self.outputs, own_policy_id, beacon_asset_name)
         let new_datum = datum_from_output(new_output)
-        require_beacon_carried_forward(new_output, old_datum)
+        require_beacon_carried_forward(new_output, own_policy_id, beacon_asset_name)
 
         expect new_datum.nonce == old_datum.nonce + 1
         expect new_datum.is_paused == True
@@ -442,8 +539,6 @@ validator archive_registry {
         expect new_datum.owner_address == old_datum.owner_address
         expect new_datum.policy_id == old_datum.policy_id
         expect new_datum.asset_name_prefix == old_datum.asset_name_prefix
-        expect new_datum.beacon_policy_id == old_datum.beacon_policy_id
-        expect new_datum.beacon_asset_name == old_datum.beacon_asset_name
         expect new_datum.forward_link == old_datum.forward_link
         expect new_datum.backward_link == old_datum.backward_link
 
@@ -457,13 +552,9 @@ validator archive_registry {
         expect verify_ed25519_signature(old_datum.authority_key, signed_payload, signature)
 
         let new_output =
-          find_master_output_by_beacon(
-            self.outputs,
-            old_datum.beacon_policy_id,
-            old_datum.beacon_asset_name,
-          )
+          find_master_output_by_beacon(self.outputs, own_policy_id, beacon_asset_name)
         let new_datum = datum_from_output(new_output)
-        require_beacon_carried_forward(new_output, old_datum)
+        require_beacon_carried_forward(new_output, own_policy_id, beacon_asset_name)
 
         expect new_datum.nonce == old_datum.nonce + 1
         expect new_datum.is_paused == False
@@ -475,8 +566,6 @@ validator archive_registry {
         expect new_datum.owner_address == old_datum.owner_address
         expect new_datum.policy_id == old_datum.policy_id
         expect new_datum.asset_name_prefix == old_datum.asset_name_prefix
-        expect new_datum.beacon_policy_id == old_datum.beacon_policy_id
-        expect new_datum.beacon_asset_name == old_datum.beacon_asset_name
         expect new_datum.forward_link == old_datum.forward_link
         expect new_datum.backward_link == old_datum.backward_link
 
@@ -493,13 +582,9 @@ validator archive_registry {
         expect verify_ed25519_signature(old_datum.owner_key, signed_payload, signature)
 
         let new_output =
-          find_master_output_by_beacon(
-            self.outputs,
-            old_datum.beacon_policy_id,
-            old_datum.beacon_asset_name,
-          )
+          find_master_output_by_beacon(self.outputs, own_policy_id, beacon_asset_name)
         let new_datum = datum_from_output(new_output)
-        require_beacon_carried_forward(new_output, old_datum)
+        require_beacon_carried_forward(new_output, own_policy_id, beacon_asset_name)
 
         expect new_datum.nonce == old_datum.nonce + 1
 
@@ -515,8 +600,6 @@ validator archive_registry {
         expect new_datum.is_paused == old_datum.is_paused
         expect new_datum.policy_id == old_datum.policy_id
         expect new_datum.asset_name_prefix == old_datum.asset_name_prefix
-        expect new_datum.beacon_policy_id == old_datum.beacon_policy_id
-        expect new_datum.beacon_asset_name == old_datum.beacon_asset_name
         expect new_datum.forward_link == old_datum.forward_link
         expect new_datum.backward_link == old_datum.backward_link
 
@@ -543,13 +626,9 @@ validator archive_registry {
         expect verify_ed25519_signature(old_datum.authority_key, signed_payload, signature)
 
         let new_output =
-          find_master_output_by_beacon(
-            self.outputs,
-            old_datum.beacon_policy_id,
-            old_datum.beacon_asset_name,
-          )
+          find_master_output_by_beacon(self.outputs, own_policy_id, beacon_asset_name)
         let new_datum = datum_from_output(new_output)
-        require_beacon_carried_forward(new_output, old_datum)
+        require_beacon_carried_forward(new_output, own_policy_id, beacon_asset_name)
 
         expect new_datum.nonce == old_datum.nonce + 1
 
@@ -576,8 +655,6 @@ validator archive_registry {
         expect new_datum.is_paused == old_datum.is_paused
         expect new_datum.policy_id == old_datum.policy_id
         expect new_datum.asset_name_prefix == old_datum.asset_name_prefix
-        expect new_datum.beacon_policy_id == old_datum.beacon_policy_id
-        expect new_datum.beacon_asset_name == old_datum.beacon_asset_name
         expect new_datum.forward_link == old_datum.forward_link
         expect new_datum.backward_link == old_datum.backward_link
 
@@ -612,13 +689,9 @@ validator archive_registry {
         expect verify_ed25519_signature(old_datum.authority_key, signed_payload, signature)
 
         let new_output =
-          find_master_output_by_beacon(
-            self.outputs,
-            old_datum.beacon_policy_id,
-            old_datum.beacon_asset_name,
-          )
+          find_master_output_by_beacon(self.outputs, own_policy_id, beacon_asset_name)
         let new_datum = datum_from_output(new_output)
-        require_beacon_carried_forward(new_output, old_datum)
+        require_beacon_carried_forward(new_output, own_policy_id, beacon_asset_name)
 
         expect new_datum.nonce == old_datum.nonce + 1
 
@@ -645,8 +718,6 @@ validator archive_registry {
         expect new_datum.is_paused == old_datum.is_paused
         expect new_datum.policy_id == old_datum.policy_id
         expect new_datum.asset_name_prefix == old_datum.asset_name_prefix
-        expect new_datum.beacon_policy_id == old_datum.beacon_policy_id
-        expect new_datum.beacon_asset_name == old_datum.beacon_asset_name
 
         True
       }
@@ -679,13 +750,9 @@ validator archive_registry {
         expect verify_ed25519_signature(old_datum.authority_key, signed_payload, signature)
 
         let new_output =
-          find_master_output_by_beacon(
-            self.outputs,
-            old_datum.beacon_policy_id,
-            old_datum.beacon_asset_name,
-          )
+          find_master_output_by_beacon(self.outputs, own_policy_id, beacon_asset_name)
         let new_datum = datum_from_output(new_output)
-        require_beacon_carried_forward(new_output, old_datum)
+        require_beacon_carried_forward(new_output, own_policy_id, beacon_asset_name)
 
         expect new_datum.nonce == old_datum.nonce + 1
 
@@ -712,8 +779,6 @@ validator archive_registry {
         expect new_datum.is_paused == old_datum.is_paused
         expect new_datum.policy_id == old_datum.policy_id
         expect new_datum.asset_name_prefix == old_datum.asset_name_prefix
-        expect new_datum.beacon_policy_id == old_datum.beacon_policy_id
-        expect new_datum.beacon_asset_name == old_datum.beacon_asset_name
 
         True
       }
@@ -722,6 +787,26 @@ validator archive_registry {
 
   mint(token_action: CreateTokenAction, policy_id: ByteArray, self: Transaction) {
     when token_action is {
+      // One-shot beacon mint, formerly beacon_contract.ak's entire reason
+      // for existing. Can only ever succeed once, for any transaction,
+      // ever: genesis_ref refers to one specific historical UTXO, and
+      // eUTXO guarantees a given UTXO can only ever be spent once. No
+      // additional signature check is needed here beyond that - whoever
+      // currently controls genesis_ref's address already had to sign for
+      // spending IT (a normal wallet-key-locked input), and that
+      // authorization is what permits this mint, exactly the same
+      // one-shot-policy pattern beacon_contract.ak used standalone.
+      MintBeacon -> {
+        expect list.any(self.inputs, fn(i) { i.output_reference == genesis_ref })
+
+        let minted_assets = assets.tokens(self.mint, policy_id)
+        expect [Pair(asset_name, quantity)] = dict.to_pairs(minted_assets)
+        expect asset_name == beacon_asset_name
+        expect quantity == 1
+
+        True
+      }
+
       MintToken -> {
         let minted_assets = assets.tokens(self.mint, policy_id)
         expect [Pair(asset_name, quantity)] = dict.to_pairs(minted_assets)
@@ -737,11 +822,13 @@ validator archive_registry {
         // i.e. it's the canonical master UTXO, not a decoy parked at the
         // same script address. A decoy could in principle have a matching
         // payment_credential (same script hash) but, lacking the beacon
-        // unit in its Value, fails here.
+        // unit in its Value, fails here. policy_id here doubles as both
+        // "this minting policy" and "the beacon's policy" since they're
+        // now the same script/value by construction.
         expect assets.quantity_of(
           master_input.output.value,
-          master_datum.beacon_policy_id,
-          master_datum.beacon_asset_name,
+          policy_id,
+          beacon_asset_name,
         ) == 1
 
         let prefix = master_datum.asset_name_prefix
@@ -752,8 +839,10 @@ validator archive_registry {
           find_token_output_with_datum(
             self.outputs,
             policy_id,
-            master_datum.beacon_policy_id,
-            master_datum.beacon_asset_name,
+            asset_name,
+            policy_id,
+            beacon_asset_name,
+            master_input.output.address,
           )
 
         let expected_asset_id = bytearray.concat(policy_id, asset_name)

@@ -257,29 +257,55 @@ fn find_master_output_by_beacon(
 fn find_token_output_with_datum(
   outputs: List<Output>,
   policy_id: ByteArray,
+  asset_name: ByteArray,
   beacon_policy_id: ByteArray,
   beacon_asset_name: ByteArray,
+  script_address: Address,
 ) -> TokenDatum {
   when outputs is {
-    [] -> fail @"Token output with inline TokenDatum not found"
+    [] -> fail @"Token output co-locating the minted asset with a matching TokenDatum, locked at the registry's own address, not found"
     [head, ..tail] -> {
       let holds_beacon =
         assets.quantity_of(head.value, beacon_policy_id, beacon_asset_name) == 1
       if holds_beacon {
-        find_token_output_with_datum(tail, policy_id, beacon_policy_id, beacon_asset_name)
+        find_token_output_with_datum(tail, policy_id, asset_name, beacon_policy_id, beacon_asset_name, script_address)
       } else {
         when head.datum is {
           InlineDatum(datum_data) -> {
             expect token_datum: TokenDatum = datum_data
-            if token_datum.policy_id == policy_id {
+            // Requires the candidate output to ACTUALLY HOLD the minted
+            // asset, not merely carry a correctly-shaped TokenDatum
+            // claiming to describe it. Without this, an output with a
+            // convincing-but-fake TokenDatum and zero real tokens could
+            // be mistaken for the genuine token output, while the real
+            // asset silently lands somewhere else undocumented in the
+            // same transaction. Mirrors require_beacon_carried_forward's
+            // exact pattern - presence in the Value, not just datum
+            // content, is what establishes "this is the real one."
+            let holds_asset = assets.quantity_of(head.value, policy_id, asset_name) == 1
+            // Requires the candidate output to sit AT THE REGISTRY'S OWN
+            // SCRIPT ADDRESS. Document tokens are permanent, anti-censorship
+            // archive records, never wallet-custodied or transferable -
+            // they are minted directly into permanent script custody and
+            // stay there forever. (They become structurally unspendable
+            // by anyone, including authority/operator/owner, the moment
+            // they land here: this validator's spend entrypoint only ever
+            // attempts to decode a spent UTXO's datum as MasterDatum,
+            // which a TokenDatum-shaped value can never satisfy - so no
+            // redeemer, no signature, no future action can ever move a
+            // document token out of this address. This is a one-way,
+            // structurally permanent lock, not merely a policy choice.)
+            let at_registry_address = head.address == script_address
+            if token_datum.policy_id == policy_id && holds_asset && at_registry_address {
               token_datum
             } else {
-              find_token_output_with_datum(tail, policy_id, beacon_policy_id, beacon_asset_name)
+              find_token_output_with_datum(tail, policy_id, asset_name, beacon_policy_id, beacon_asset_name, script_address)
             }
           }
-          _ -> find_token_output_with_datum(tail, policy_id, beacon_policy_id, beacon_asset_name)
+          _ -> find_token_output_with_datum(tail, policy_id, asset_name, beacon_policy_id, beacon_asset_name, script_address)
         }
       }
+
     }
   }
 }
@@ -370,12 +396,23 @@ validator archive_registry {
         let new_datum = datum_from_output(new_output)
         require_beacon_carried_forward(new_output, old_datum)
 
+        // asset_name comes from self.mint - the transaction's own literal
+        // minting field - rather than from any candidate output's datum,
+        // since trusting a datum-supplied asset_name to then go find "the"
+        // output with that datum would be circular and defeats the point
+        // of the presence check inside find_token_output_with_datum.
+        let minted_assets = assets.tokens(self.mint, old_datum.policy_id)
+        expect [Pair(asset_name, mint_quantity)] = dict.to_pairs(minted_assets)
+        expect mint_quantity == 1
+
         let token_output_datum =
           find_token_output_with_datum(
             self.outputs,
             old_datum.policy_id,
+            asset_name,
             old_datum.beacon_policy_id,
             old_datum.beacon_asset_name,
+            new_output.address,
           )
 
         // Validate Token Setup (Pillar 2 Extensions)
@@ -752,8 +789,10 @@ validator archive_registry {
           find_token_output_with_datum(
             self.outputs,
             policy_id,
+            asset_name,
             master_datum.beacon_policy_id,
             master_datum.beacon_asset_name,
+            master_input.output.address,
           )
 
         let expected_asset_id = bytearray.concat(policy_id, asset_name)

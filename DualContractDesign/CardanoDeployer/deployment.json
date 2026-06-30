@@ -1,12 +1,12 @@
 {
   "network": "TESTNET",
-  "timestamp_utc": "2026-06-30T07:04:21.530267+00:00",
+  "timestamp_utc": "2026-06-30T10:46:52.890473+00:00",
   "deployed_from_wallet_address": "addr_test1qryvgass5dsrf2kxl3vgfz76uhp83kv5lagzcp29tcana68ca5aqa6swlq6llfamln09tal7n5kvt4275ckwedpt4v7q48uhex",
-  "transaction_hash": "c7feb2e9fe4a5882d75e53c66ad3a6767d5b64b9e06162f07542f32df2e6c95e",
+  "transaction_hash": "36c05a693ecb4fdeb471427f247cf275dc7094a40bb50ac54dda823720570842",
   "genesis_transaction_hash": "6d36c0e2f304a5c27b85b3f04e95fc015566d35aef5f061c17c70e3e8b9ee508",
   "registry_contract": {
-    "policy_id": "02c99cb562084c9eec05f7c7f47c2401ec9d1b53ee3c1c6db95049cf",
-    "script_address": "addr_test1wqpvn894vgyye8hvqhmu0aruysq7e8gm20hrc8rdh9gynncg4msd0",
+    "policy_id": "5714c7653692a065f43fba81bafc1efdf58a3da37ac833e5f9b32c50",
+    "script_address": "addr_test1wpt3f3m9x6f2qe0587agrwhurm7ltz3a5davsvl9lxejc5qfyxuke",
     "bootstrap_generated_plutus_path": "bootstrap_generated_plutus.json"
   },
   "beacon_contract": {
@@ -17,10 +17,10 @@
     "asset_name_utf8": "ZPEPG-BEACON-TEST"
   },
   "master_utxo": {
-    "utxo_ref": "c7feb2e9fe4a5882d75e53c66ad3a6767d5b64b9e06162f07542f32df2e6c95e#0",
-    "transaction_hash": "c7feb2e9fe4a5882d75e53c66ad3a6767d5b64b9e06162f07542f32df2e6c95e",
+    "utxo_ref": "36c05a693ecb4fdeb471427f247cf275dc7094a40bb50ac54dda823720570842#0",
+    "transaction_hash": "36c05a693ecb4fdeb471427f247cf275dc7094a40bb50ac54dda823720570842",
     "output_index": 0,
-    "script_address": "addr_test1wqpvn894vgyye8hvqhmu0aruysq7e8gm20hrc8rdh9gynncg4msd0",
+    "script_address": "addr_test1wpt3f3m9x6f2qe0587agrwhurm7ltz3a5davsvl9lxejc5qfyxuke",
     "beacon_token": {
       "policy_id": "c7f183d1b365282a9f15bf273bbeed3d122426f8c94ff54116d26d0a",
       "asset_name_hex": "5a504550472d424541434f4e2d54455354",

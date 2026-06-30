@@ -28,9 +28,9 @@ import sys
 
 from pycardano import Network
 
-from cardano_network import YaciDevNetApi, NetworkError, UtxoInfo
-from cardano_types import OutputReference
-from cardano_workflow import (
+from DualContractDesign.CardanoDeployer.cardano_network import YaciDevNetApi, NetworkError, UtxoInfo
+from DualContractDesign.CardanoDeployer.cardano_types import OutputReference
+from DualContractDesign.CardanoDeployer.cardano_workflow import (
     AikenBlueprint, DeploymentRecord, GenesisTransaction, PermKeys, Wallet,
 )
 
