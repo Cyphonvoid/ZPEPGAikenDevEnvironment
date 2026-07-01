@@ -583,13 +583,6 @@ class CardanoNetworkClient:
     TOKEN_UTXO_FLOOR_LOVELACE = 3_000_000
     TTL_BUFFER_SLOTS = 200
 
-    # Minimum lovelace a UTXO must hold to be eligible as Plutus collateral.
-    # The protocol's actual minimum is a percentage of the tx fee (~3.82 ADA
-    # in practice for these txs); we require 5 ADA to leave comfortable
-    # headroom as fees vary, and to avoid picking a UTXO that only barely
-    # clears the floor. Collateral is returned unspent on success.
-    COLLATERAL_MIN_LOVELACE = 5_000_000
-
     def __init__(
         self,
         deployment: Union[str, Path, DeploymentConfig],
@@ -795,28 +788,6 @@ class CardanoNetworkClient:
             utxo=master.utxo, script=self._script, redeemer=Redeemer(redeemer_data),
         )
 
-        # Explicit collateral selection.
-        #
-        # Any transaction that runs a Plutus script must supply collateral -
-        # a pure-ADA UTXO the ledger can seize if phase-2 validation fails.
-        # It must (a) hold at least the protocol's minimum collateral amount
-        # (a percentage of the tx fee; ~3.8 ADA in practice here) and
-        # (b) contain NO native tokens (collateral must be ADA-only).
-        #
-        # pycardano's default collateral auto-selection frequently grabs the
-        # first/smallest available UTXO at the input address, which - when the
-        # funding wallet is fragmented into many small change UTXOs - is often
-        # below the minimum and causes:
-        #   "Minimum collateral amount N is greater than total provided
-        #    collateral inputs {...}"
-        # even when the wallet as a whole holds plenty of ADA.
-        #
-        # We therefore choose collateral explicitly: the smallest ADA-only
-        # UTXO at the funding address that still clears the floor (smallest-
-        # sufficient, so we don't lock up the big UTXO as collateral and can
-        # still use it to fund the tx body).
-        self._attach_collateral(builder)
-
         # Store script UTxOs + their datum bytes on the context so
         # BlockFrostBackend.evaluate_tx_cbor can pass them as the
         # additionalUtxoSet — required for Conway/PlutusV3 inline datum
@@ -834,45 +805,6 @@ class CardanoNetworkClient:
             builder.mint = mint_multi_asset
 
         return builder
-
-    def _attach_collateral(self, builder: TransactionBuilder) -> None:
-        """
-        Explicitly select and attach a collateral UTXO from the funding
-        address, avoiding pycardano's default auto-selection which can pick
-        a too-small or token-carrying UTXO when the wallet is fragmented.
-
-        Selection rules:
-          - ADA-only (no native tokens - collateral must be pure ADA)
-          - holds at least COLLATERAL_MIN_LOVELACE
-          - smallest such UTXO (so the large funding UTXO stays available to
-            cover the transaction body itself)
-
-        If no single UTXO clears the floor, raises a clear error rather than
-        letting pycardano fail deep inside build() with a cryptic collateral
-        message.
-        """
-        candidates = []
-        for u in self.context.utxos(self._funding_address):
-            val = u.output.amount
-            has_tokens = bool(val.multi_asset) and len(val.multi_asset) > 0
-            if has_tokens:
-                continue  # collateral must be ADA-only
-            if val.coin >= self.COLLATERAL_MIN_LOVELACE:
-                candidates.append(u)
-
-        if not candidates:
-            raise CardanoNetworkClientError(
-                f"No ADA-only UTXO at the funding address holds at least "
-                f"{self.COLLATERAL_MIN_LOVELACE} lovelace to use as collateral. "
-                f"The wallet may be fragmented into small change UTXOs - "
-                f"consolidate or fund it with a larger UTXO."
-            )
-
-        # Smallest-sufficient, so we don't tie up the biggest UTXO as
-        # collateral (collateral is returned unspent on success, but is
-        # still reserved for the duration of the tx).
-        collateral_utxo = min(candidates, key=lambda u: u.output.amount.coin)
-        builder.collaterals.append(collateral_utxo)
 
     @staticmethod
     def _sign_and_submit_static(
@@ -1465,4 +1397,3 @@ class CardanoNetworkClient:
             network_type=network_type,
         )
         return client, genesis
-

@@ -1,62 +1,86 @@
 ==============================================================================
 CARDANO NETWORK CLIENT - FUNCTION TEST REPORT
 ==============================================================================
-Started:  2026-06-30T17:01:03.627878+00:00
-Finished: 2026-06-30T17:01:17.866157+00:00
-Total duration: 14.24s
+Started:  2026-07-01T14:20:54.231782+00:00
+Finished: 2026-07-01T14:20:56.622825+00:00
+Total duration: 2.39s
 
-TOTAL: 9   PASSED: 9   FAILED: 0
+TOTAL: 5   PASSED: 4   FAILED: 1
 ==============================================================================
 
-[1/9] PASS  get_master_state - read
-    duration:  0.01s
-    detail:    nonce=17, is_paused=AikenFalse()
+[1/5] PASS  get_master_state - read
+    duration:  0.32s
+    detail:    nonce=11, is_paused=AikenFalse()
 
-[2/9] PASS  get_stats - read
-    duration:  0.01s
-    detail:    total_token_count=3, total_unique_documents=3
+[2/5] PASS  get_stats - read
+    duration:  0.14s
+    detail:    total_token_count=2, total_unique_documents=2
 
-[3/9] PASS  mint_document - write + cross-check via find_document
-    duration:  2.48s
-    tx_hash:   35a9a5379553711a0fdeb91e14aa153850ed97912a2c29f01e0d0044f4b9a76c
-    detail:    Minted + independently re-found via find_document. nonce 17->18
+[3/5] FAIL  mint_document - write + cross-check via find_document
+    duration:  1.46s
+    detail:    Unhandled exception: Namespace(EvaluationFailure=Namespace(ScriptFailures=Namespace()))
+    exception:
+      Traceback (most recent call last):
+        File "/workspaces/ZPEPGAikenDevEnvironment/test_client.py", line 192, in run
+          passed, detail, tx_hash = fn()
+                                    ^^^^
+        File "/workspaces/ZPEPGAikenDevEnvironment/test_client.py", line 452, in <lambda>
+          runner.run("mint_document - write + cross-check via find_document", lambda: test_mint_document(client))
+                                                                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^
+        File "/workspaces/ZPEPGAikenDevEnvironment/test_client.py", line 268, in test_mint_document
+          result = client.mint_document(
+                   ^^^^^^^^^^^^^^^^^^^^^
+        File "/workspaces/ZPEPGAikenDevEnvironment/CardanoNetworkClient.py", line 1067, in mint_document
+          return self._execute_and_confirm(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^
+        File "/workspaces/ZPEPGAikenDevEnvironment/CardanoNetworkClient.py", line 979, in _execute_and_confirm
+          tx_hash = self._sign_and_submit_with_retry(builder_factory)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        File "/workspaces/ZPEPGAikenDevEnvironment/CardanoNetworkClient.py", line 961, in _sign_and_submit_with_retry
+          return self._sign_and_submit(builder)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        File "/workspaces/ZPEPGAikenDevEnvironment/CardanoNetworkClient.py", line 901, in _sign_and_submit
+          return self._sign_and_submit_static(builder, self.context, self._funding_key, self._funding_address)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        File "/workspaces/ZPEPGAikenDevEnvironment/CardanoNetworkClient.py", line 881, in _sign_and_submit_static
+          signed_tx = builder.build_and_sign(signing_keys=[signing_key], change_address=change_address)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        File "/home/vscode/.local/lib/python3.12/site-packages/pycardano/txbuilder.py", line 1716, in build_and_sign
+          tx_body = self.build(
+                    ^^^^^^^^^^^
+        File "/home/vscode/.local/lib/python3.12/site-packages/pycardano/logging.py", line 37, in wrapper
+          raise e
+        File "/home/vscode/.local/lib/python3.12/site-packages/pycardano/logging.py", line 28, in wrapper
+          output = func(obj, *args, **kwargs)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+        File "/home/vscode/.local/lib/python3.12/site-packages/pycardano/txbuilder.py", line 1483, in build
+          self._update_execution_units(
+        File "/home/vscode/.local/lib/python3.12/site-packages/pycardano/txbuilder.py", line 1621, in _update_execution_units
+          estimated_execution_units = self._estimate_execution_units(
+                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        File "/home/vscode/.local/lib/python3.12/site-packages/pycardano/txbuilder.py", line 1667, in _estimate_execution_units
+          return self.context.evaluate_tx(tx)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        File "/home/vscode/.local/lib/python3.12/site-packages/pycardano/backend/base.py", line 209, in evaluate_tx
+          return self.evaluate_tx_cbor(tx.to_cbor())
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        File "/workspaces/ZPEPGAikenDevEnvironment/CardanoNetworkClient.py", line 397, in evaluate_tx_cbor
+          raise TransactionFailedException(result)
+      pycardano.exception.TransactionFailedException: Namespace(EvaluationFailure=Namespace(ScriptFailures=Namespace()))
 
-[4/9] PASS  pause / resume - round-trip
-    duration:  4.68s
-    tx_hash:   a1af7b1c0ca4b36e7ed4ea0cf2fee1a5b96a7eb5cfd133a85b79b01eefe7ecd0
-    detail:    Pause/Resume round-trip confirmed. [pause tx 0fb11cf20eb59acecba7a823ffed83a20301b2c2e8d8fc713b895988614b3ef1] [resume tx a1af7b1c0ca4b36e7ed4ea0cf2fee1a5b96a7eb5cfd133a85b79b01eefe7ecd0]
+[4/5] PASS  link_forward - one-time only
+    duration:  0.18s
+    detail:    SKIPPED (soft pass): forward_link already set on this deployment - one-time-only action.
 
-[5/9] PASS  rotate_key - round-trip + in-memory sync check
-    duration:  4.71s
-    tx_hash:   d326a6be5168636b108d4f024e1bc345d28d3f6644a6c7607fef7a75389c866b
-    detail:    Operator key round-trip confirmed, including client's in-memory key staying in sync. [da6cdb23859d561b4c028ed4340f800d8671b4a3ba54b61870f52d9f19ee2d2a] [d326a6be5168636b108d4f024e1bc345d28d3f6644a6c7607fef7a75389c866b]
-
-[6/9] PASS  withdraw - write
-    duration:  2.31s
-    tx_hash:   118c9b52d6f51a3f7ccc8492d83d42e206d9d8ffb629977d36bf12677a1c80ba
-    detail:    Withdrew 2000000 lovelace, nonce 22->23
-
-[7/9] PASS  link_forward - one-time only
-    duration:  0.01s
-    detail:    SKIPPED (soft pass): forward_link already set on this devnet session - one-time-only action.
-
-[8/9] PASS  link_backward - one-time only
-    duration:  0.01s
-    detail:    SKIPPED (soft pass): backward_link already set on this devnet session - one-time-only action.
-
-[9/9] PASS  MissingKeyError - raised correctly when role key absent
-    duration:  0.01s
-    detail:    Correctly raised MissingKeyError: This action requires the 'authority' key, but it wasn't provided at construction. Pass authority_key=... when creating CardanoNetworkClient.
+[5/5] PASS  link_backward - one-time only
+    duration:  0.17s
+    detail:    SKIPPED (soft pass): backward_link already set on this deployment - one-time-only action.
 
 ==============================================================================
 SUMMARY
 ==============================================================================
   PASS  get_master_state - read
   PASS  get_stats - read
-  PASS  mint_document - write + cross-check via find_document
-  PASS  pause / resume - round-trip
-  PASS  rotate_key - round-trip + in-memory sync check
-  PASS  withdraw - write
+  FAIL  mint_document - write + cross-check via find_document
   PASS  link_forward - one-time only
   PASS  link_backward - one-time only
-  PASS  MissingKeyError - raised correctly when role key absent

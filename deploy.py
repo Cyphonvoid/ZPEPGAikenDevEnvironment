@@ -42,9 +42,9 @@ def main():
         return 1
 
     perm_keys = json.loads(Path(PERM_KEYS_JSON_PATH).read_text())
-    operator_key = bytes.fromhex(perm_keys["operator"]["private_key_hex"])
-    authority_key = bytes.fromhex(perm_keys["authority"]["private_key_hex"])
-    owner_key = bytes.fromhex(perm_keys["owner"]["private_key_hex"])
+    operator_key  = bytes.fromhex(perm_keys["operator"]["public_key_hex"])
+    authority_key = bytes.fromhex(perm_keys["authority"]["public_key_hex"])
+    owner_key     = bytes.fromhex(perm_keys["owner"]["public_key_hex"])
     print("Loaded perm_keys.json.")
 
     print(f"\nCompiling + parameterizing archive_registry, then submitting genesis transaction to {NETWORK_TYPE.value}...")

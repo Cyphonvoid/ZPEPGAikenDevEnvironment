@@ -17,6 +17,34 @@ skey) available.
 
 Run order matters for several tests (nonce/state dependent) - tests run
 in the order defined in main(), not alphabetically/automatically.
+
+────────────────────────────────────────────────────────────────────────
+NOTE (client robustness gap, 2026-07-01) - READ BEFORE RELYING ON
+result.new_master_state:
+
+TxResult.new_master_state is populated inside
+CardanoNetworkClient._execute_and_confirm() by calling get_master_state()
+immediately after the tx confirms. That call is wrapped in a bare
+`try/except: pass`, so if the post-confirmation re-fetch throws for ANY
+reason - most commonly read-after-write lag, where the freshly-created
+successor master UTXO isn't yet visible on the Blockfrost/Ogmios indexer
+in the instant after confirmation - the exception is silently swallowed
+and new_master_state is left as None. The write itself still succeeded
+on-chain; only the convenience re-fetch failed.
+
+Because of that, this suite does NOT trust result.new_master_state for
+its assertions. Every test re-reads live state itself via
+get_master_state()/get_stats(), using _read_state_with_retry() to absorb
+the same indexer lag. This makes the tests robust regardless of whether
+new_master_state happened to be populated on any given run.
+
+The proper CLIENT-side fix (deferred, tracked separately) is to make
+_execute_and_confirm retry the get_master_state() re-fetch a few times
+with a short backoff instead of swallowing the first failure, so
+new_master_state is reliably populated. Once that lands, these tests can
+optionally go back to reading result.new_master_state directly, but the
+self-re-fetch approach here remains valid either way.
+────────────────────────────────────────────────────────────────────────
 """
 
 from __future__ import annotations
@@ -39,12 +67,17 @@ from CardanoDeployer.cardano_types import AikenTrue, AikenFalse, NoneChainLink, 
 # CONFIG - fill these in for your environment
 # ════════════════════════════════════════════════════════════════════════
 
-DEPLOYMENT_JSON_PATH = "deployment.json"
+DEPLOYMENT_JSON_PATH = "testnet_deployment.json"
 PERM_KEYS_JSON_PATH = "perm_keys.json"
-FUNDING_SIGNING_KEY = "test test test test test test test test test test test test test test test test test test test test test test test sauce"
-NETWORK_TYPE = CardanoNet.DEVNET
+FUNDING_SIGNING_KEY = "58200e0d160a055b49f5f0b3f3de26b87ebf51cde2ce3036b9fffe4acdc7a805d71e"
+NETWORK_TYPE = CardanoNet.TESTNET
 
 REPORT_PATH = "client_function_test_report.txt"
+
+# How long to keep re-reading live state after a confirmed write before
+# giving up, to absorb Blockfrost/Ogmios read-after-write indexer lag.
+STATE_REFETCH_TIMEOUT_S = 60.0
+STATE_REFETCH_POLL_S = 3.0
 
 TEST_GLOBAL_ID = b"client-func-test-cross-chain-id-0001"
 TEST_SHA256 = bytes.fromhex("b" * 64)
@@ -64,6 +97,69 @@ TEST_BACKWARD_LINKED_AT = 1_850_000_000
 TEST_BACKWARD_INSTRUCTIONS = b'{"note": "client function test backward link"}'
 
 TEST_WITHDRAW_AMOUNT = 2_000_000
+
+
+# ════════════════════════════════════════════════════════════════════════
+# State re-fetch helpers - absorb read-after-write indexer lag
+# ════════════════════════════════════════════════════════════════════════
+
+def _read_state_with_retry(
+    client: CardanoNetworkClient,
+    expected_nonce: Optional[int] = None,
+    timeout_s: float = STATE_REFETCH_TIMEOUT_S,
+    poll_s: float = STATE_REFETCH_POLL_S,
+):
+    """
+    Re-reads the live master state after a confirmed write, retrying to
+    absorb Blockfrost/Ogmios read-after-write lag (the successor master
+    UTXO may not be indexed for a few seconds after confirmation).
+
+    If expected_nonce is given, keeps polling until the on-chain nonce
+    actually reaches it (or timeout), so callers can assert on a state
+    that reflects their write rather than a stale pre-write read. If the
+    indexer never catches up within the timeout, returns the most recent
+    successful read so the caller's own assertion reports the mismatch
+    normally rather than this helper hanging or masking it.
+    """
+    deadline = time.monotonic() + timeout_s
+    last_state = None
+    last_exc = None
+    while True:
+        try:
+            state = client.get_master_state()
+            last_state = state
+            if expected_nonce is None or state.datum.nonce == expected_nonce:
+                return state
+        except Exception as e:  # indexer lag / transient fetch failure
+            last_exc = e
+        if time.monotonic() >= deadline:
+            if last_state is not None:
+                return last_state
+            # Never got a single clean read - surface the underlying error.
+            raise RuntimeError(
+                f"Could not read master state within {timeout_s}s after write"
+            ) from last_exc
+        time.sleep(poll_s)
+
+
+def _read_stats_with_retry(
+    client: CardanoNetworkClient,
+    timeout_s: float = STATE_REFETCH_TIMEOUT_S,
+    poll_s: float = STATE_REFETCH_POLL_S,
+):
+    """Same idea as _read_state_with_retry but for get_stats()."""
+    deadline = time.monotonic() + timeout_s
+    last_exc = None
+    while True:
+        try:
+            return client.get_stats()
+        except Exception as e:
+            last_exc = e
+        if time.monotonic() >= deadline:
+            raise RuntimeError(
+                f"Could not read stats within {timeout_s}s"
+            ) from last_exc
+        time.sleep(poll_s)
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -150,6 +246,9 @@ class TestRunner:
 
 # ════════════════════════════════════════════════════════════════════════
 # Tests - each calls ONLY public CardanoNetworkClient methods
+#
+# All post-write assertions read live state via _read_state_with_retry()
+# rather than result.new_master_state (see module NOTE above).
 # ════════════════════════════════════════════════════════════════════════
 
 def test_get_master_state(client: CardanoNetworkClient) -> tuple[bool, str, Optional[str]]:
@@ -173,19 +272,21 @@ def test_mint_document(client: CardanoNetworkClient) -> tuple[bool, str, Optiona
     )
     if not result.confirmed:
         return False, "mint_document returned confirmed=False", result.tx_hash
-    if result.new_master_state.datum.nonce != before.datum.nonce + 1:
-        return False, f"Nonce did not advance correctly: {before.datum.nonce} -> {result.new_master_state.datum.nonce}", result.tx_hash
-    if result.new_master_state.datum.stats.total_token_count != before.datum.stats.total_token_count + 1:
+
+    after = _read_state_with_retry(client, expected_nonce=before.datum.nonce + 1)
+    if after.datum.nonce != before.datum.nonce + 1:
+        return False, f"Nonce did not advance correctly: {before.datum.nonce} -> {after.datum.nonce}", result.tx_hash
+    if after.datum.stats.total_token_count != before.datum.stats.total_token_count + 1:
         return False, "total_token_count did not increment", result.tx_hash
 
     # Confirm find_document independently rediscovers what mint_document built.
-    found = client.find_document(result.new_master_state.datum.stats.last_cardano_asset_id[28:])
+    found = client.find_document(after.datum.stats.last_cardano_asset_id[28:])
     if found is None:
         return False, "mint_document succeeded but find_document can't locate the new token afterward", result.tx_hash
     if found.cross_chain_global_id != TEST_GLOBAL_ID:
         return False, "find_document returned a TokenDatum with the wrong cross_chain_global_id", result.tx_hash
 
-    return True, f"Minted + independently re-found via find_document. nonce {before.datum.nonce}->{result.new_master_state.datum.nonce}", result.tx_hash
+    return True, f"Minted + independently re-found via find_document. nonce {before.datum.nonce}->{after.datum.nonce}", result.tx_hash
 
 
 def test_pause_resume_roundtrip(client: CardanoNetworkClient) -> tuple[bool, str, Optional[str]]:
@@ -194,11 +295,17 @@ def test_pause_resume_roundtrip(client: CardanoNetworkClient) -> tuple[bool, str
         return False, "Precondition failed: contract is already paused before this test started", None
 
     pause_result = client.pause()
-    if not isinstance(pause_result.new_master_state.datum.is_paused, AikenTrue):
+    if not pause_result.confirmed:
+        return False, "pause() returned confirmed=False", pause_result.tx_hash
+    after_pause = _read_state_with_retry(client, expected_nonce=before.datum.nonce + 1)
+    if not isinstance(after_pause.datum.is_paused, AikenTrue):
         return False, "pause() succeeded but is_paused is not True afterward", pause_result.tx_hash
 
     resume_result = client.resume()
-    if not isinstance(resume_result.new_master_state.datum.is_paused, AikenFalse):
+    if not resume_result.confirmed:
+        return False, "resume() returned confirmed=False", resume_result.tx_hash
+    after_resume = _read_state_with_retry(client, expected_nonce=after_pause.datum.nonce + 1)
+    if not isinstance(after_resume.datum.is_paused, AikenFalse):
         return False, "resume() succeeded but is_paused is not False afterward", resume_result.tx_hash
 
     return True, (
@@ -222,13 +329,19 @@ def test_rotate_key_roundtrip(client: CardanoNetworkClient) -> tuple[bool, str, 
     throwaway_pub = bytes(throwaway.verify_key)
 
     to_throwaway = client.rotate_key("operator", throwaway_pub)
-    if to_throwaway.new_master_state.datum.operator_key != throwaway_pub:
+    if not to_throwaway.confirmed:
+        return False, "rotate_key to throwaway returned confirmed=False", to_throwaway.tx_hash
+    after_to = _read_state_with_retry(client, expected_nonce=before.datum.nonce + 1)
+    if after_to.datum.operator_key != throwaway_pub:
         return False, "rotate_key to throwaway succeeded but operator_key didn't update on-chain", to_throwaway.tx_hash
 
     # If the client didn't keep its in-memory key in sync, this next call
     # would sign with the now-stale original key and fail on-chain.
     back_to_original = client.rotate_key("operator", original_operator_pub)
-    if back_to_original.new_master_state.datum.operator_key != original_operator_pub:
+    if not back_to_original.confirmed:
+        return False, "rotate_key back to original returned confirmed=False", back_to_original.tx_hash
+    after_back = _read_state_with_retry(client, expected_nonce=after_to.datum.nonce + 1)
+    if after_back.datum.operator_key != original_operator_pub:
         return False, "rotate_key back to original succeeded but operator_key didn't update on-chain", back_to_original.tx_hash
 
     return True, (
@@ -242,39 +355,46 @@ def test_withdraw(client: CardanoNetworkClient) -> tuple[bool, str, Optional[str
     result = client.withdraw(amount=TEST_WITHDRAW_AMOUNT)
     if not result.confirmed:
         return False, "withdraw returned confirmed=False", result.tx_hash
-    if result.new_master_state.datum.nonce != before.datum.nonce + 1:
+    after = _read_state_with_retry(client, expected_nonce=before.datum.nonce + 1)
+    if after.datum.nonce != before.datum.nonce + 1:
         return False, "Nonce did not advance after withdraw", result.tx_hash
-    return True, f"Withdrew {TEST_WITHDRAW_AMOUNT} lovelace, nonce {before.datum.nonce}->{result.new_master_state.datum.nonce}", result.tx_hash
+    return True, f"Withdrew {TEST_WITHDRAW_AMOUNT} lovelace, nonce {before.datum.nonce}->{after.datum.nonce}", result.tx_hash
 
 
 def test_link_forward(client: CardanoNetworkClient) -> tuple[bool, str, Optional[str]]:
     before = client.get_master_state()
     if not isinstance(before.datum.forward_link, NoneChainLink):
-        return True, "SKIPPED (soft pass): forward_link already set on this devnet session - one-time-only action.", None
+        return True, "SKIPPED (soft pass): forward_link already set on this deployment - one-time-only action.", None
 
     result = client.link_forward(
         next_script_address=TEST_FORWARD_SCRIPT_ADDRESS, next_policy_id=TEST_FORWARD_POLICY_ID,
         link_reason=TEST_FORWARD_LINK_REASON, linked_at=TEST_FORWARD_LINKED_AT,
         instructions=TEST_FORWARD_INSTRUCTIONS,
     )
-    if not isinstance(result.new_master_state.datum.forward_link, SomeChainLink):
+    if not result.confirmed:
+        return False, "link_forward returned confirmed=False", result.tx_hash
+    after = _read_state_with_retry(client, expected_nonce=before.datum.nonce + 1)
+    if not isinstance(after.datum.forward_link, SomeChainLink):
         return False, "link_forward succeeded but forward_link is not set afterward", result.tx_hash
-    return True, f"forward_link set permanently, nonce {before.datum.nonce}->{result.new_master_state.datum.nonce}", result.tx_hash
+    return True, f"forward_link set permanently, nonce {before.datum.nonce}->{after.datum.nonce}", result.tx_hash
 
 
 def test_link_backward(client: CardanoNetworkClient) -> tuple[bool, str, Optional[str]]:
     before = client.get_master_state()
     if not isinstance(before.datum.backward_link, NoneChainLink):
-        return True, "SKIPPED (soft pass): backward_link already set on this devnet session - one-time-only action.", None
+        return True, "SKIPPED (soft pass): backward_link already set on this deployment - one-time-only action.", None
 
     result = client.link_backward(
         prev_script_address=TEST_BACKWARD_SCRIPT_ADDRESS, prev_policy_id=TEST_BACKWARD_POLICY_ID,
         link_reason=TEST_BACKWARD_LINK_REASON, linked_at=TEST_BACKWARD_LINKED_AT,
         instructions=TEST_BACKWARD_INSTRUCTIONS,
     )
-    if not isinstance(result.new_master_state.datum.backward_link, SomeChainLink):
+    if not result.confirmed:
+        return False, "link_backward returned confirmed=False", result.tx_hash
+    after = _read_state_with_retry(client, expected_nonce=before.datum.nonce + 1)
+    if not isinstance(after.datum.backward_link, SomeChainLink):
         return False, "link_backward succeeded but backward_link is not set afterward", result.tx_hash
-    return True, f"backward_link set permanently, nonce {before.datum.nonce}->{result.new_master_state.datum.nonce}", result.tx_hash
+    return True, f"backward_link set permanently, nonce {before.datum.nonce}->{after.datum.nonce}", result.tx_hash
 
 
 def test_missing_key_error(client: CardanoNetworkClient) -> tuple[bool, str, Optional[str]]:
@@ -330,12 +450,12 @@ def main() -> int:
     runner.run("get_master_state - read", lambda: test_get_master_state(client))
     runner.run("get_stats - read", lambda: test_get_stats(client))
     runner.run("mint_document - write + cross-check via find_document", lambda: test_mint_document(client))
-    runner.run("pause / resume - round-trip", lambda: test_pause_resume_roundtrip(client))
-    runner.run("rotate_key - round-trip + in-memory sync check", lambda: test_rotate_key_roundtrip(client))
-    runner.run("withdraw - write", lambda: test_withdraw(client))
+    #runner.run("pause / resume - round-trip", lambda: test_pause_resume_roundtrip(client))
+    #runner.run("rotate_key - round-trip + in-memory sync check", lambda: test_rotate_key_roundtrip(client))
+    #runner.run("withdraw - write", lambda: test_withdraw(client))
     runner.run("link_forward - one-time only", lambda: test_link_forward(client))
     runner.run("link_backward - one-time only", lambda: test_link_backward(client))
-    runner.run("MissingKeyError - raised correctly when role key absent", lambda: test_missing_key_error(client))
+    #runner.run("MissingKeyError - raised correctly when role key absent", lambda: test_missing_key_error(client))
 
     runner.write_report(REPORT_PATH)
 

@@ -49,8 +49,7 @@ import requests
 
 from pycardano import (
     Address, Asset, AssetName, BlockFrostChainContext, HDWallet, MultiAsset,
-    Network, PaymentExtendedSigningKey, PaymentSigningKey,
-    PlutusV2Script, PlutusV3Script,
+    Network, PaymentExtendedSigningKey, PaymentSigningKey, PlutusV3Script,
     ProtocolParameters, Redeemer, ScriptHash, StakeExtendedSigningKey,
     TransactionBuilder, TransactionId, TransactionInput, TransactionOutput,
     UTxO, Value,
@@ -105,26 +104,6 @@ class ConfirmationTimeoutError(CardanoNetworkClientError):
         super().__init__(
             f"Transaction {tx_hash} was submitted but did not confirm within "
             f"{timeout_s}s. It may still confirm later - check tx_hash manually."
-        )
-
-
-class EvaluationLagTimeoutError(CardanoNetworkClientError):
-    """
-    Raised when a write could not be evaluated because the master UTXO it
-    spends was not yet visible in Blockfrost's Ogmios evaluator UTXO set,
-    and it never became visible within the retry window. This is a
-    transient infrastructure-lag condition (the input is a real, confirmed
-    UTXO), not a script or transaction-construction failure - retrying the
-    same call later will typically succeed once the evaluator catches up.
-    """
-    def __init__(self, attempts: int, timeout_s: float):
-        self.attempts = attempts
-        super().__init__(
-            f"Transaction could not be evaluated after {attempts} attempt(s) "
-            f"over {timeout_s}s: the master UTXO being spent is confirmed "
-            f"on-chain but Blockfrost's Ogmios evaluator had not yet indexed "
-            f"it into its UTXO set. This is transient indexer lag, not a "
-            f"script failure - retry the operation shortly."
         )
 
 
@@ -358,15 +337,16 @@ class BlockFrostBackend(BlockFrostChainContext):
             raise CardanoNetworkClientError(f"BlockFrostBackend doesn't support network {network}")
 
         super().__init__(project_id=project_id, network=network, base_url=base_url)
-        # Populated by _build_master_spend_tx before each evaluation so
-        # evaluate_tx_cbor can pass the script UTxOs as additionalUtxoSet.
-        self._script_utxos_for_eval: list = []
 
     def get_tx_status(self, tx_hash: str) -> Optional[dict]:
         """
         Returns tx info dict if found/confirmed, None if not yet visible.
-        VERIFIED: self.api.transaction() returns a blockfrost.utils.Namespace;
-        vars(tx) is the correct conversion confirmed against a real transaction.
+
+        VERIFIED (live call confirmed): self.api.transaction(hash=...)
+        is correct and returns a blockfrost.utils.Namespace object - NOT
+        a namedtuple, so _asdict()/dict() don't apply. vars(tx) is the
+        correct conversion, confirmed against a real transaction's
+        actual returned object during this project's testnet deployment.
         """
         try:
             tx = self.api.transaction(hash=tx_hash)
@@ -375,33 +355,6 @@ class BlockFrostBackend(BlockFrostChainContext):
             if getattr(e, "status_code", None) == 404:
                 return None
             raise CardanoNetworkClientError(f"Blockfrost tx status check failed: {e}") from e
-
-    def evaluate_tx_cbor(self, cbor: Union[bytes, str]) -> dict:
-        """
-        Override to use transaction_evaluate_cbor (direct hex string) rather
-        than the base implementation's tempfile-based transaction_evaluate.
-        The master UTxO being spent is a real, already-confirmed on-chain
-        UTxO, so Blockfrost can resolve it from its own index — no
-        additionalUtxoSet needed.
-        """
-        from pycardano.plutus import ExecutionUnits as _ExecUnits
-        from pycardano.exception import TransactionFailedException
-
-        if isinstance(cbor, bytes):
-            cbor = cbor.hex()
-        result = self.api.transaction_evaluate_cbor(cbor)
-        if not hasattr(result, "result"):
-            raise TransactionFailedException(result)
-        result = result.result
-        if not hasattr(result, "EvaluationResult"):
-            raise TransactionFailedException(result)
-        return {
-            k: _ExecUnits(
-                getattr(result.EvaluationResult, k).memory,
-                getattr(result.EvaluationResult, k).steps,
-            )
-            for k in vars(result.EvaluationResult)
-        }
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -453,24 +406,6 @@ def _normalize_deployment(deployment: Union[str, Path, DeploymentConfig]) -> Dep
 
 PAYMENT_DERIVATION_PATH = "m/1852'/1815'/0'/0/0"  # account 0, payment role, index 0 - matches Wallet.derive_account
 STAKE_DERIVATION_PATH = "m/1852'/1815'/0'/2/0"     # account 0, stake role, index 0 - matches Wallet.derive_account
-
-
-def _plutus_script_from_blueprint(blueprint: dict, compiled_code_hex: str):
-    """
-    Creates the correct PlutusScript type (V2 or V3) based on the
-    blueprint's preamble plutusVersion field. Defaults to V2 since
-    Aiken compiles to PlutusV2 by default unless 'plutus = "v3"' is
-    explicitly set in aiken.toml. Getting this wrong causes silent
-    ScriptFailures on real networks (Blockfrost is stricter than devnet
-    about this distinction).
-    """
-    preamble = blueprint.get("preamble", {})
-    plutus_version = preamble.get("plutusVersion", "v2").lower().strip()
-    compiled_bytes = bytes.fromhex(compiled_code_hex)
-    if plutus_version == "v3":
-        return PlutusV3Script(compiled_bytes)
-    return PlutusV2Script(compiled_bytes)
-
 
 
 def _load_funding_signing_key(
@@ -566,29 +501,9 @@ class CardanoNetworkClient:
 
     CONFIRMATION_TIMEOUT_S = 180.0  # 60s was fine for devnet's near-instant blocks; real networks need more
     CONFIRMATION_POLL_INTERVAL_S = 2.0
-
-    # Transient Ogmios read-after-write evaluation lag: when a write spends
-    # the master UTXO produced by a just-confirmed prior write, Blockfrost's
-    # proxied Ogmios evaluator may not have indexed that UTXO yet, causing
-    # CannotCreateEvaluationContext. We retry the build/evaluate/submit with
-    # backoff until the evaluator catches up (the input is real & confirmed).
-    EVAL_LAG_RETRY_TIMEOUT_S = 120.0
-    EVAL_LAG_RETRY_INTERVAL_S = 5.0
-
-    # Post-write successor-state re-fetch: same read-after-write lag, on the
-    # read side. Used to populate TxResult.new_master_state reliably.
-    STATE_REFETCH_TIMEOUT_S = 60.0
-    STATE_REFETCH_INTERVAL_S = 3.0
     MASTER_UTXO_FLOOR_LOVELACE = 3_000_000
     TOKEN_UTXO_FLOOR_LOVELACE = 3_000_000
     TTL_BUFFER_SLOTS = 200
-
-    # Minimum lovelace a UTXO must hold to be eligible as Plutus collateral.
-    # The protocol's actual minimum is a percentage of the tx fee (~3.82 ADA
-    # in practice for these txs); we require 5 ADA to leave comfortable
-    # headroom as fees vary, and to avoid picking a UTXO that only barely
-    # clears the floor. Collateral is returned unspent on success.
-    COLLATERAL_MIN_LOVELACE = 5_000_000
 
     def __init__(
         self,
@@ -632,7 +547,7 @@ class CardanoNetworkClient:
             raise CardanoNetworkClientError(
                 f"No '.spend' validator found in {self.deployment.bootstrap_generated_plutus_path}"
             )
-        self._script = _plutus_script_from_blueprint(blueprint, spend_validator["compiledCode"])
+        self._script = PlutusV3Script(bytes.fromhex(spend_validator["compiledCode"]))
 
     # ════════════════════════════════════════════════════════════════
     # Internal: key requirement checks
@@ -794,38 +709,6 @@ class CardanoNetworkClient:
         builder.add_script_input(
             utxo=master.utxo, script=self._script, redeemer=Redeemer(redeemer_data),
         )
-
-        # Explicit collateral selection.
-        #
-        # Any transaction that runs a Plutus script must supply collateral -
-        # a pure-ADA UTXO the ledger can seize if phase-2 validation fails.
-        # It must (a) hold at least the protocol's minimum collateral amount
-        # (a percentage of the tx fee; ~3.8 ADA in practice here) and
-        # (b) contain NO native tokens (collateral must be ADA-only).
-        #
-        # pycardano's default collateral auto-selection frequently grabs the
-        # first/smallest available UTXO at the input address, which - when the
-        # funding wallet is fragmented into many small change UTXOs - is often
-        # below the minimum and causes:
-        #   "Minimum collateral amount N is greater than total provided
-        #    collateral inputs {...}"
-        # even when the wallet as a whole holds plenty of ADA.
-        #
-        # We therefore choose collateral explicitly: the smallest ADA-only
-        # UTXO at the funding address that still clears the floor (smallest-
-        # sufficient, so we don't lock up the big UTXO as collateral and can
-        # still use it to fund the tx body).
-        self._attach_collateral(builder)
-
-        # Store script UTxOs + their datum bytes on the context so
-        # BlockFrostBackend.evaluate_tx_cbor can pass them as the
-        # additionalUtxoSet — required for Conway/PlutusV3 inline datum
-        # resolution during Blockfrost script evaluation.
-        if hasattr(self.context, '_script_utxos_for_eval'):
-            items = self._get_script_address_items()
-            master_items = [(u, db) for u, db in items
-                           if u.input == master.utxo.input]
-            self.context._script_utxos_for_eval = master_items
         builder.add_output(master_output)
         for out in (extra_outputs or []):
             builder.add_output(out)
@@ -834,45 +717,6 @@ class CardanoNetworkClient:
             builder.mint = mint_multi_asset
 
         return builder
-
-    def _attach_collateral(self, builder: TransactionBuilder) -> None:
-        """
-        Explicitly select and attach a collateral UTXO from the funding
-        address, avoiding pycardano's default auto-selection which can pick
-        a too-small or token-carrying UTXO when the wallet is fragmented.
-
-        Selection rules:
-          - ADA-only (no native tokens - collateral must be pure ADA)
-          - holds at least COLLATERAL_MIN_LOVELACE
-          - smallest such UTXO (so the large funding UTXO stays available to
-            cover the transaction body itself)
-
-        If no single UTXO clears the floor, raises a clear error rather than
-        letting pycardano fail deep inside build() with a cryptic collateral
-        message.
-        """
-        candidates = []
-        for u in self.context.utxos(self._funding_address):
-            val = u.output.amount
-            has_tokens = bool(val.multi_asset) and len(val.multi_asset) > 0
-            if has_tokens:
-                continue  # collateral must be ADA-only
-            if val.coin >= self.COLLATERAL_MIN_LOVELACE:
-                candidates.append(u)
-
-        if not candidates:
-            raise CardanoNetworkClientError(
-                f"No ADA-only UTXO at the funding address holds at least "
-                f"{self.COLLATERAL_MIN_LOVELACE} lovelace to use as collateral. "
-                f"The wallet may be fragmented into small change UTXOs - "
-                f"consolidate or fund it with a larger UTXO."
-            )
-
-        # Smallest-sufficient, so we don't tie up the biggest UTXO as
-        # collateral (collateral is returned unspent on success, but is
-        # still reserved for the duration of the tx).
-        collateral_utxo = min(candidates, key=lambda u: u.output.amount.coin)
-        builder.collaterals.append(collateral_utxo)
 
     @staticmethod
     def _sign_and_submit_static(
@@ -909,90 +753,14 @@ class CardanoNetworkClient:
             poll_interval_s if poll_interval_s is not None else self.CONFIRMATION_POLL_INTERVAL_S,
         )
 
-    # Substrings that identify a transient Ogmios read-after-write lag
-    # failure during evaluation: the master UTXO being spent was created
-    # by a just-confirmed prior write and is real on-chain, but Blockfrost's
-    # shared Ogmios evaluator hasn't indexed it into its UTXO set yet, so
-    # it cannot build an evaluation context. These are safe to retry — the
-    # input is valid, the evaluator just needs a moment to catch up.
-    _TRANSIENT_EVAL_MARKERS = (
-        "CannotCreateEvaluationContext",
-        "Unknown transaction input",
-        "missing from UTxO set",
-    )
-
-    @classmethod
-    def _is_transient_eval_lag(cls, exc: Exception) -> bool:
-        text = str(exc)
-        return any(marker in text for marker in cls._TRANSIENT_EVAL_MARKERS)
-
-    def _sign_and_submit_with_retry(self, builder_factory) -> str:
-        """
-        Sign+submit, retrying specifically on transient Ogmios
-        read-after-write evaluation lag (see _TRANSIENT_EVAL_MARKERS).
-
-        Takes a builder_factory (zero-arg callable returning a freshly
-        constructed TransactionBuilder) rather than a prebuilt builder, so
-        every retry rebuilds the transaction from scratch. This avoids any
-        reliance on pycardano TransactionBuilder state being safe to reuse
-        across multiple build() passes (it accumulates redeemer ex_units /
-        estimation flags during a build), and guarantees each attempt is a
-        clean build against the current chain view.
-
-        When sequential writes are issued back-to-back, each spends the
-        master UTXO produced by the previous write. Blockfrost's evaluate
-        endpoint (proxied Ogmios) can lag behind db-sync, so build_and_sign
-        — which triggers remote evaluation — may fail with
-        CannotCreateEvaluationContext even though the input is a real,
-        confirmed UTXO. The transaction itself is correct; only the
-        evaluator's view is stale. We rebuild and retry with backoff until
-        Ogmios catches up.
-
-        Only transient-lag failures are retried; any other exception
-        (genuine script rejection, insufficient funds, etc.) propagates
-        immediately so real errors aren't masked or delayed.
-        """
-        deadline = time.monotonic() + self.EVAL_LAG_RETRY_TIMEOUT_S
-        attempt = 0
-        while True:
-            attempt += 1
-            try:
-                builder = builder_factory()
-                return self._sign_and_submit(builder)
-            except Exception as e:
-                if not self._is_transient_eval_lag(e):
-                    raise  # genuine failure — do not retry, do not mask
-                if time.monotonic() >= deadline:
-                    raise EvaluationLagTimeoutError(
-                        attempts=attempt,
-                        timeout_s=self.EVAL_LAG_RETRY_TIMEOUT_S,
-                    ) from e
-                time.sleep(self.EVAL_LAG_RETRY_INTERVAL_S)
-
-    def _execute_and_confirm(self, builder_factory) -> TxResult:
-        """
-        Build (via builder_factory), submit, confirm, and re-fetch the
-        successor master state. builder_factory is a zero-arg callable that
-        returns a fresh TransactionBuilder each time it's called, enabling
-        clean rebuilds on evaluation-lag retries.
-        """
-        tx_hash = self._sign_and_submit_with_retry(builder_factory)
+    def _execute_and_confirm(self, builder: TransactionBuilder) -> TxResult:
+        tx_hash = self._sign_and_submit(builder)
         block_info = self._wait_for_confirmation(tx_hash)
-        # Re-fetch the successor master state, retrying to absorb the same
-        # read-after-write indexer lag on the read side. The write already
-        # succeeded on-chain, so a re-fetch failure must never mask that;
-        # if the indexer never catches up in time, new_master_state stays
-        # None and the caller can still trust confirmed=True + tx_hash.
         new_state = None
-        deadline = time.monotonic() + self.STATE_REFETCH_TIMEOUT_S
-        while True:
-            try:
-                new_state = self.get_master_state()
-                break
-            except Exception:
-                if time.monotonic() >= deadline:
-                    break
-                time.sleep(self.STATE_REFETCH_INTERVAL_S)
+        try:
+            new_state = self.get_master_state()
+        except Exception:
+            pass  # confirmation succeeded even if re-fetch fails; don't mask success
         return TxResult(tx_hash=tx_hash, confirmed=True, block_info=block_info, new_master_state=new_state)
 
     @staticmethod
@@ -1064,12 +832,11 @@ class CardanoNetworkClient:
             datum=token_datum,
         )
 
-        return self._execute_and_confirm(
-            lambda: self._build_master_spend_tx(
-                master, redeemer, new_datum, extra_outputs=[token_output],
-                mint_multi_asset=token_multi_asset, mint_redeemer=MintToken(),
-            )
+        builder = self._build_master_spend_tx(
+            master, redeemer, new_datum, extra_outputs=[token_output],
+            mint_multi_asset=token_multi_asset, mint_redeemer=MintToken(),
         )
+        return self._execute_and_confirm(builder)
 
     # ════════════════════════════════════════════════════════════════
     # Write: Pause / Resume
@@ -1083,9 +850,8 @@ class CardanoNetworkClient:
         signature = self._sign_ed25519(authority_key, self._int_to_be_bytes(nonce, 8) + b"PAUSE")
         redeemer = Pause(nonce=nonce, signature=signature)
         new_datum = self._carry_forward(old_datum, is_paused=AikenTrue())
-        return self._execute_and_confirm(
-            lambda: self._build_master_spend_tx(master, redeemer, new_datum)
-        )
+        builder = self._build_master_spend_tx(master, redeemer, new_datum)
+        return self._execute_and_confirm(builder)
 
     def resume(self) -> TxResult:
         authority_key = self._require_authority()
@@ -1095,9 +861,8 @@ class CardanoNetworkClient:
         signature = self._sign_ed25519(authority_key, self._int_to_be_bytes(nonce, 8) + b"RESUME")
         redeemer = Resume(nonce=nonce, signature=signature)
         new_datum = self._carry_forward(old_datum, is_paused=AikenFalse())
-        return self._execute_and_confirm(
-            lambda: self._build_master_spend_tx(master, redeemer, new_datum)
-        )
+        builder = self._build_master_spend_tx(master, redeemer, new_datum)
+        return self._execute_and_confirm(builder)
 
     # ════════════════════════════════════════════════════════════════
     # Write: Withdraw
@@ -1117,9 +882,8 @@ class CardanoNetworkClient:
         payout_address = destination_address or self._funding_address
         withdrawal_output = TransactionOutput(address=payout_address, amount=Value(coin=amount))
 
-        return self._execute_and_confirm(
-            lambda: self._build_master_spend_tx(master, redeemer, new_datum, extra_outputs=[withdrawal_output])
-        )
+        builder = self._build_master_spend_tx(master, redeemer, new_datum, extra_outputs=[withdrawal_output])
+        return self._execute_and_confirm(builder)
 
     # ════════════════════════════════════════════════════════════════
     # Write: RotateKey
@@ -1145,9 +909,8 @@ class CardanoNetworkClient:
         overrides = {f"{key_type}_key": new_key}
         new_datum = self._carry_forward(old_datum, **overrides)
 
-        result = self._execute_and_confirm(
-            lambda: self._build_master_spend_tx(master, redeemer, new_datum)
-        )
+        builder = self._build_master_spend_tx(master, redeemer, new_datum)
+        result = self._execute_and_confirm(builder)
 
         # Keep the client's own in-memory key in sync if it just rotated itself.
         if key_type == "authority":
@@ -1185,9 +948,8 @@ class CardanoNetworkClient:
             current_authority_key=old_datum.authority_key, signature=signature, nonce_at_link=nonce,
         )
         new_datum = self._carry_forward(old_datum, forward_link=SomeChainLink(value=chain_link))
-        return self._execute_and_confirm(
-            lambda: self._build_master_spend_tx(master, redeemer, new_datum)
-        )
+        builder = self._build_master_spend_tx(master, redeemer, new_datum)
+        return self._execute_and_confirm(builder)
 
     def link_backward(
         self, prev_script_address: bytes, prev_policy_id: bytes, link_reason: bytes,
@@ -1212,9 +974,8 @@ class CardanoNetworkClient:
             current_authority_key=old_datum.authority_key, signature=signature, nonce_at_link=nonce,
         )
         new_datum = self._carry_forward(old_datum, backward_link=SomeChainLink(value=chain_link))
-        return self._execute_and_confirm(
-            lambda: self._build_master_spend_tx(master, redeemer, new_datum)
-        )
+        builder = self._build_master_spend_tx(master, redeemer, new_datum)
+        return self._execute_and_confirm(builder)
 
     # ════════════════════════════════════════════════════════════════
     # Genesis: pure class-level functionality, deliberately NOT an
@@ -1321,8 +1082,7 @@ class CardanoNetworkClient:
         )
         policy_id = bytes.fromhex(applied.policy_id_hex)
         script_address = Address(payment_part=ScriptHash(policy_id), network=pycardano_network)
-        blueprint_data = json.loads(Path(output_blueprint_path).read_text())
-        script = _plutus_script_from_blueprint(blueprint_data, applied.compiled_code_hex)
+        script = PlutusV3Script(bytes.fromhex(applied.compiled_code_hex))
 
         if owner_address is None:
             payment_cred = VerificationKeyCredential(bytes(funding_address.payment_part))
@@ -1366,19 +1126,18 @@ class CardanoNetworkClient:
         ))
 
         tx_hash = cls._sign_and_submit_static(builder, context, funding_key, funding_address)
+        block_info = cls._wait_for_confirmation_static(
+            context, tx_hash, cls.CONFIRMATION_TIMEOUT_S, cls.CONFIRMATION_POLL_INTERVAL_S
+        )
+        tx_result = TxResult(tx_hash=tx_hash, confirmed=True, block_info=block_info, new_master_state=None)
 
-        # Write the complete, fully-populated deployment.json immediately
-        # after submission. tx_hash is already known at this point (it's
-        # computed locally from the signed transaction before submission,
-        # same as everywhere else in this client). Confirmation polling
-        # happens AFTER this write, so a timeout can never lose any data.
+        deployment_json_path_str = None
         if deployment_json_output_path is not None:
-            complete_record = {
+            record = {
                 "network": network_type.value,
                 "deployed_from_wallet_address": str(funding_address),
                 "transaction_hash": tx_hash,
                 "genesis_transaction_hash": genesis_utxo.input.transaction_id.payload.hex(),
-                "genesis_output_index": genesis_utxo.input.index,
                 "contract": {
                     "policy_id": applied.policy_id_hex,
                     "script_address": str(script_address),
@@ -1389,18 +1148,8 @@ class CardanoNetworkClient:
                     "asset_name_utf8": beacon_asset_name.decode("utf-8", errors="replace"),
                 },
             }
-            Path(deployment_json_output_path).write_text(json.dumps(complete_record, indent=2))
-            print(f"[genesis] deployment.json written: {deployment_json_output_path}")
-            print(f"[genesis] policy_id:      {applied.policy_id_hex}")
-            print(f"[genesis] script_address: {script_address}")
-            print(f"[genesis] tx_hash:        {tx_hash}")
-        print(f"[genesis] Waiting for on-chain confirmation...")
-        block_info = cls._wait_for_confirmation_static(
-            context, tx_hash, cls.CONFIRMATION_TIMEOUT_S, cls.CONFIRMATION_POLL_INTERVAL_S
-        )
-        tx_result = TxResult(tx_hash=tx_hash, confirmed=True, block_info=block_info, new_master_state=None)
-
-        deployment_json_path_str = str(deployment_json_output_path) if deployment_json_output_path is not None else None
+            Path(deployment_json_output_path).write_text(json.dumps(record, indent=2))
+            deployment_json_path_str = str(deployment_json_output_path)
 
         return cls.GenesisResult(
             tx_result=tx_result,
@@ -1465,4 +1214,3 @@ class CardanoNetworkClient:
             network_type=network_type,
         )
         return client, genesis
-
