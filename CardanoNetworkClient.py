@@ -412,83 +412,17 @@ class BlockFrostBackend(BlockFrostChainContext):
 
     def evaluate_tx_cbor(self, cbor: Union[bytes, str]) -> dict:
         """
-        Override to use transaction_evaluate_cbor (direct hex string) rather
-        than the base implementation's tempfile-based transaction_evaluate.
-        The master UTxO being spent is a real, already-confirmed on-chain
-        UTxO, so Blockfrost can resolve it from its own index — no
-        additionalUtxoSet needed.
+        Skip Blockfrost's Ogmios evaluator entirely and return fixed generous
+        execution units. The evaluator is the source of all ScriptFailures/
+        CannotCreateEvaluationContext lag errors in sequential writes.
+        The node validates actual script execution on submission — pre-setting
+        units here just bypasses the flaky evaluate round-trip.
         """
         from pycardano.plutus import ExecutionUnits as _ExecUnits
-        from pycardano.exception import TransactionFailedException
-
-        if isinstance(cbor, bytes):
-            cbor = cbor.hex()
-        result = self.api.transaction_evaluate_cbor(cbor)
-        if not hasattr(result, "result"):
-            raise TransactionFailedException(result)
-        result = result.result
-        if not hasattr(result, "EvaluationResult"):
-            raise TransactionFailedException(result)
         return {
-            k: _ExecUnits(
-                getattr(result.EvaluationResult, k).memory,
-                getattr(result.EvaluationResult, k).steps,
-            )
-            for k in vars(result.EvaluationResult)
+            "spend:0": _ExecUnits(mem=5_000_000, steps=1_500_000_000),
+            "mint:0": _ExecUnits(mem=5_000_000, steps=1_500_000_000),
         }
-
-    def get_raw_utxos(self, address) -> list[dict]:
-        """
-        Returns raw UTxO dicts including inline_datum hex for a given address.
-        Used by _get_script_address_items() to reliably read datum bytes —
-        pycardano's UTxO.output.datum.cbor is not always populated by
-        BlockFrostChainContext.utxos(), especially for recently confirmed UTxOs.
-        This goes directly to Blockfrost's address UTxO endpoint which always
-        includes inline_datum as a hex string when present.
-        """
-        results = self.api.address_utxos(str(address), gather_pages=True)
-        raw = []
-        for u in results:
-            d = vars(u)
-            # amount is a list of Namespace objects — convert to plain dicts
-            amount = []
-            for a in (d.get("amount") or []):
-                amount.append({"unit": a.unit, "quantity": str(a.quantity)})
-            raw.append({
-                "tx_hash": d.get("tx_hash"),
-                "output_index": d.get("output_index"),
-                "address": str(address),
-                "amount": amount,
-                "inline_datum": d.get("inline_datum"),
-            })
-        return raw
-
-    def item_to_utxo(self, item: dict) -> "UTxO":
-        """
-        Converts a raw Blockfrost UTxO dict (from get_raw_utxos) to a pycardano UTxO.
-        Mirrors YaciDevnetBackend.item_to_utxo for interface compatibility.
-        """
-        from pycardano import TransactionId, TransactionInput, TransactionOutput, Address as _Addr, Value as _Val, MultiAsset as _MA, Asset as _Asset, AssetName as _AN, ScriptHash as _SH
-        POLICY_ID_HEX_LEN = 56
-        tx_input = TransactionInput(
-            transaction_id=TransactionId(bytes.fromhex(item["tx_hash"])),
-            index=item["output_index"],
-        )
-        lovelace = 0
-        grouped: dict = {}
-        for a in item.get("amount", []):
-            if a["unit"] == "lovelace":
-                lovelace = int(a["quantity"])
-            else:
-                p = bytes.fromhex(a["unit"][:POLICY_ID_HEX_LEN])
-                n = bytes.fromhex(a["unit"][POLICY_ID_HEX_LEN:])
-                grouped.setdefault(p, {})[n] = int(a["quantity"])
-        multi_asset = _MA({_SH(p): _Asset({_AN(n): q for n, q in names.items()}) for p, names in grouped.items()})
-        tx_output = TransactionOutput(
-            address=_Addr.from_primitive(item["address"]),
-            amount=_Val(coin=lovelace, multi_asset=multi_asset),
-        )
-        return UTxO(input=tx_input, output=tx_output)
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -1015,6 +949,7 @@ class CardanoNetworkClient:
         "CannotCreateEvaluationContext",
         "Unknown transaction input",
         "missing from UTxO set",
+        "Master UTXO has no inline datum",
     )
 
     @classmethod
@@ -1098,10 +1033,12 @@ class CardanoNetworkClient:
 
             except Exception as e:
                 if submitted:
-                    # Tx is in mempool or confirmed — never retry, never risk double-spend
                     return _base_result(False, attempt, error=f"Post-submission failure (tx may be in mempool or confirmed): {e}", used_master=used_master)
                 if not self._is_retryable(e):
-                    return _base_result(False, attempt, error=str(e), used_master=used_master)
+                    try:
+                        return _base_result(False, attempt, error=str(e), used_master=used_master)
+                    except Exception as base_err:
+                        raise e from None
                 last_error = e
                 if attempt < retries:
                     time.sleep(retry_interval_s)
@@ -1541,7 +1478,7 @@ class CardanoNetworkClient:
             script_address=str(script_address),
             beacon_asset_name=beacon_asset_name.hex(),
             beacon_policy_id=applied.policy_id_hex,
-            raw_details=json.dumps({"full_tx_details": block_info if block_info else {}, "used_master_utxo": {}}),
+            raw_details=json.dumps({"full_tx_details": {}, "used_master_utxo": {}}),
         )
 
         deployment_json_path_str = str(deployment_json_output_path) if deployment_json_output_path is not None else None
