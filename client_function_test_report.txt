@@ -1,86 +1,130 @@
 ==============================================================================
 CARDANO NETWORK CLIENT - FUNCTION TEST REPORT
 ==============================================================================
-Started:  2026-07-01T14:20:54.231782+00:00
-Finished: 2026-07-01T14:20:56.622825+00:00
-Total duration: 2.39s
+Started:  2026-07-02T05:06:11.939150+00:00
+Finished: 2026-07-02T05:07:17.723338+00:00
+Total duration: 65.78s
 
-TOTAL: 5   PASSED: 4   FAILED: 1
+TOTAL: 6   PASSED: 4   FAILED: 2
 ==============================================================================
 
-[1/5] PASS  get_master_state - read
-    duration:  0.32s
-    detail:    nonce=11, is_paused=AikenFalse()
+[1/6] PASS  get_master_state - read
+    duration:  0.15s
+    detail:    nonce=21, is_paused=AikenFalse()
 
-[2/5] PASS  get_stats - read
-    duration:  0.14s
-    detail:    total_token_count=2, total_unique_documents=2
+[2/6] PASS  get_stats - read
+    duration:  0.22s
+    detail:    total_token_count=7, total_unique_documents=7
 
-[3/5] FAIL  mint_document - write + cross-check via find_document
-    duration:  1.46s
-    detail:    Unhandled exception: Namespace(EvaluationFailure=Namespace(ScriptFailures=Namespace()))
+[3/6] PASS  mint_document - write + cross-check via find_document
+    duration:  25.59s
+    tx_hash:   6daacc0943ad89f929b89455e632a07cea917b55581576acae4e41af789ee805
+    detail:    Minted + independently re-found via find_document. nonce 21->22
+
+[4/6] FAIL  pause / resume - round-trip
+    duration:  1.27s
+    detail:    Unhandled exception: Failed to submit transaction. Error code: 400. Error message: {"contents":{"contents":{"contents":{"era":"ShelleyBasedEraConway","error":["ConwayUtxowFailure (UtxoFailure (InsufficientCollateral (DeltaCoin (-9957374423)) (Coin 817742)))","ConwayUtxowFailure (UtxoFailure (IncorrectTotalCollateralField (DeltaCoin (-9957374423)) (Coin 3823993)))","ConwayUtxowFailure (UtxoFailure NoCollateralInputs)","ConwayUtxowFailure (UtxoFailure (BadInputsUTxO (NonEmptySet (fromList [TxIn (TxId {unTxId = SafeHash \"41e26d36640cb23145668dbc84f2b6533f244557262ae429e60db1a8e615f306\"}) (TxIx {unTxIx = 1})]))))"],"kind":"ShelleyTxValidationError"},"tag":"TxValidationErrorInCardanoMode"},"tag":"TxCmdTxSubmitValidationError"},"tag":"TxSubmitFail"}
     exception:
+      Traceback (most recent call last):
+        File "/home/vscode/.local/lib/python3.12/site-packages/pycardano/backend/blockfrost.py", line 269, in submit_tx_cbor
+          response = self.api.transaction_submit(f.name)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        File "/home/vscode/.local/lib/python3.12/site-packages/blockfrost/utils.py", line 66, in error_wrapper
+          raise ApiError(request_response)
+      blockfrost.utils.ApiError: {'error': 'Bad Request', 'message': '{"contents":{"contents":{"contents":{"era":"ShelleyBasedEraConway","error":["ConwayUtxowFailure (UtxoFailure (InsufficientCollateral (DeltaCoin (-9957374423)) (Coin 817742)))","ConwayUtxowFailure (UtxoFailure (IncorrectTotalCollateralField (DeltaCoin (-9957374423)) (Coin 3823993)))","ConwayUtxowFailure (UtxoFailure NoCollateralInputs)","ConwayUtxowFailure (UtxoFailure (BadInputsUTxO (NonEmptySet (fromList [TxIn (TxId {unTxId = SafeHash \\"41e26d36640cb23145668dbc84f2b6533f244557262ae429e60db1a8e615f306\\"}) (TxIx {unTxIx = 1})]))))"],"kind":"ShelleyTxValidationError"},"tag":"TxValidationErrorInCardanoMode"},"tag":"TxCmdTxSubmitValidationError"},"tag":"TxSubmitFail"}', 'status_code': 400}
+      
+      The above exception was the direct cause of the following exception:
+      
       Traceback (most recent call last):
         File "/workspaces/ZPEPGAikenDevEnvironment/test_client.py", line 192, in run
           passed, detail, tx_hash = fn()
                                     ^^^^
-        File "/workspaces/ZPEPGAikenDevEnvironment/test_client.py", line 452, in <lambda>
-          runner.run("mint_document - write + cross-check via find_document", lambda: test_mint_document(client))
-                                                                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^
-        File "/workspaces/ZPEPGAikenDevEnvironment/test_client.py", line 268, in test_mint_document
-          result = client.mint_document(
-                   ^^^^^^^^^^^^^^^^^^^^^
-        File "/workspaces/ZPEPGAikenDevEnvironment/CardanoNetworkClient.py", line 1067, in mint_document
+        File "/workspaces/ZPEPGAikenDevEnvironment/test_client.py", line 453, in <lambda>
+          runner.run("pause / resume - round-trip", lambda: test_pause_resume_roundtrip(client))
+                                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        File "/workspaces/ZPEPGAikenDevEnvironment/test_client.py", line 297, in test_pause_resume_roundtrip
+          pause_result = client.pause()
+                         ^^^^^^^^^^^^^^
+        File "/workspaces/ZPEPGAikenDevEnvironment/CardanoNetworkClient.py", line 1057, in pause
           return self._execute_and_confirm(
                  ^^^^^^^^^^^^^^^^^^^^^^^^^^
-        File "/workspaces/ZPEPGAikenDevEnvironment/CardanoNetworkClient.py", line 979, in _execute_and_confirm
-          tx_hash = self._sign_and_submit_with_retry(builder_factory)
-                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-        File "/workspaces/ZPEPGAikenDevEnvironment/CardanoNetworkClient.py", line 961, in _sign_and_submit_with_retry
-          return self._sign_and_submit(builder)
-                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-        File "/workspaces/ZPEPGAikenDevEnvironment/CardanoNetworkClient.py", line 901, in _sign_and_submit
+        File "/workspaces/ZPEPGAikenDevEnvironment/CardanoNetworkClient.py", line 952, in _execute_and_confirm
+          tx_hash = self._sign_and_submit(builder)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        File "/workspaces/ZPEPGAikenDevEnvironment/CardanoNetworkClient.py", line 926, in _sign_and_submit
           return self._sign_and_submit_static(builder, self.context, self._funding_key, self._funding_address)
                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-        File "/workspaces/ZPEPGAikenDevEnvironment/CardanoNetworkClient.py", line 881, in _sign_and_submit_static
-          signed_tx = builder.build_and_sign(signing_keys=[signing_key], change_address=change_address)
-                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-        File "/home/vscode/.local/lib/python3.12/site-packages/pycardano/txbuilder.py", line 1716, in build_and_sign
-          tx_body = self.build(
-                    ^^^^^^^^^^^
+        File "/workspaces/ZPEPGAikenDevEnvironment/CardanoNetworkClient.py", line 908, in _sign_and_submit_static
+          context.submit_tx(signed_tx)
         File "/home/vscode/.local/lib/python3.12/site-packages/pycardano/logging.py", line 37, in wrapper
           raise e
         File "/home/vscode/.local/lib/python3.12/site-packages/pycardano/logging.py", line 28, in wrapper
           output = func(obj, *args, **kwargs)
                    ^^^^^^^^^^^^^^^^^^^^^^^^^^
-        File "/home/vscode/.local/lib/python3.12/site-packages/pycardano/txbuilder.py", line 1483, in build
-          self._update_execution_units(
-        File "/home/vscode/.local/lib/python3.12/site-packages/pycardano/txbuilder.py", line 1621, in _update_execution_units
-          estimated_execution_units = self._estimate_execution_units(
-                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-        File "/home/vscode/.local/lib/python3.12/site-packages/pycardano/txbuilder.py", line 1667, in _estimate_execution_units
-          return self.context.evaluate_tx(tx)
-                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-        File "/home/vscode/.local/lib/python3.12/site-packages/pycardano/backend/base.py", line 209, in evaluate_tx
-          return self.evaluate_tx_cbor(tx.to_cbor())
-                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-        File "/workspaces/ZPEPGAikenDevEnvironment/CardanoNetworkClient.py", line 397, in evaluate_tx_cbor
-          raise TransactionFailedException(result)
-      pycardano.exception.TransactionFailedException: Namespace(EvaluationFailure=Namespace(ScriptFailures=Namespace()))
+        File "/home/vscode/.local/lib/python3.12/site-packages/pycardano/backend/base.py", line 180, in submit_tx
+          return self.submit_tx_cbor(tx.to_cbor())
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        File "/home/vscode/.local/lib/python3.12/site-packages/pycardano/backend/blockfrost.py", line 272, in submit_tx_cbor
+          raise TransactionFailedException(
+      pycardano.exception.TransactionFailedException: Failed to submit transaction. Error code: 400. Error message: {"contents":{"contents":{"contents":{"era":"ShelleyBasedEraConway","error":["ConwayUtxowFailure (UtxoFailure (InsufficientCollateral (DeltaCoin (-9957374423)) (Coin 817742)))","ConwayUtxowFailure (UtxoFailure (IncorrectTotalCollateralField (DeltaCoin (-9957374423)) (Coin 3823993)))","ConwayUtxowFailure (UtxoFailure NoCollateralInputs)","ConwayUtxowFailure (UtxoFailure (BadInputsUTxO (NonEmptySet (fromList [TxIn (TxId {unTxId = SafeHash \"41e26d36640cb23145668dbc84f2b6533f244557262ae429e60db1a8e615f306\"}) (TxIx {unTxIx = 1})]))))"],"kind":"ShelleyTxValidationError"},"tag":"TxValidationErrorInCardanoMode"},"tag":"TxCmdTxSubmitValidationError"},"tag":"TxSubmitFail"}
 
-[4/5] PASS  link_forward - one-time only
-    duration:  0.18s
-    detail:    SKIPPED (soft pass): forward_link already set on this deployment - one-time-only action.
+[5/6] FAIL  rotate_key - round-trip + in-memory sync check
+    duration:  38.28s
+    detail:    Unhandled exception: Failed to submit transaction. Error code: 400. Error message: {"contents":{"contents":{"contents":{"era":"ShelleyBasedEraConway","error":["ConwayUtxowFailure (UtxoFailure (InsufficientCollateral (DeltaCoin (-9953761795)) (Coin 823001)))","ConwayUtxowFailure (UtxoFailure (IncorrectTotalCollateralField (DeltaCoin (-9953761795)) (Coin 3823993)))","ConwayUtxowFailure (UtxoFailure NoCollateralInputs)","ConwayUtxowFailure (UtxoFailure (BadInputsUTxO (NonEmptySet (fromList [TxIn (TxId {unTxId = SafeHash \"6daacc0943ad89f929b89455e632a07cea917b55581576acae4e41af789ee805\"}) (TxIx {unTxIx = 2})]))))"],"kind":"ShelleyTxValidationError"},"tag":"TxValidationErrorInCardanoMode"},"tag":"TxCmdTxSubmitValidationError"},"tag":"TxSubmitFail"}
+    exception:
+      Traceback (most recent call last):
+        File "/home/vscode/.local/lib/python3.12/site-packages/pycardano/backend/blockfrost.py", line 269, in submit_tx_cbor
+          response = self.api.transaction_submit(f.name)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        File "/home/vscode/.local/lib/python3.12/site-packages/blockfrost/utils.py", line 66, in error_wrapper
+          raise ApiError(request_response)
+      blockfrost.utils.ApiError: {'error': 'Bad Request', 'message': '{"contents":{"contents":{"contents":{"era":"ShelleyBasedEraConway","error":["ConwayUtxowFailure (UtxoFailure (InsufficientCollateral (DeltaCoin (-9953761795)) (Coin 823001)))","ConwayUtxowFailure (UtxoFailure (IncorrectTotalCollateralField (DeltaCoin (-9953761795)) (Coin 3823993)))","ConwayUtxowFailure (UtxoFailure NoCollateralInputs)","ConwayUtxowFailure (UtxoFailure (BadInputsUTxO (NonEmptySet (fromList [TxIn (TxId {unTxId = SafeHash \\"6daacc0943ad89f929b89455e632a07cea917b55581576acae4e41af789ee805\\"}) (TxIx {unTxIx = 2})]))))"],"kind":"ShelleyTxValidationError"},"tag":"TxValidationErrorInCardanoMode"},"tag":"TxCmdTxSubmitValidationError"},"tag":"TxSubmitFail"}', 'status_code': 400}
+      
+      The above exception was the direct cause of the following exception:
+      
+      Traceback (most recent call last):
+        File "/workspaces/ZPEPGAikenDevEnvironment/test_client.py", line 192, in run
+          passed, detail, tx_hash = fn()
+                                    ^^^^
+        File "/workspaces/ZPEPGAikenDevEnvironment/test_client.py", line 454, in <lambda>
+          runner.run("rotate_key - round-trip + in-memory sync check", lambda: test_rotate_key_roundtrip(client))
+                                                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        File "/workspaces/ZPEPGAikenDevEnvironment/test_client.py", line 340, in test_rotate_key_roundtrip
+          back_to_original = client.rotate_key("operator", original_operator_pub)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        File "/workspaces/ZPEPGAikenDevEnvironment/CardanoNetworkClient.py", line 1119, in rotate_key
+          result = self._execute_and_confirm(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+        File "/workspaces/ZPEPGAikenDevEnvironment/CardanoNetworkClient.py", line 952, in _execute_and_confirm
+          tx_hash = self._sign_and_submit(builder)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        File "/workspaces/ZPEPGAikenDevEnvironment/CardanoNetworkClient.py", line 926, in _sign_and_submit
+          return self._sign_and_submit_static(builder, self.context, self._funding_key, self._funding_address)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        File "/workspaces/ZPEPGAikenDevEnvironment/CardanoNetworkClient.py", line 908, in _sign_and_submit_static
+          context.submit_tx(signed_tx)
+        File "/home/vscode/.local/lib/python3.12/site-packages/pycardano/logging.py", line 37, in wrapper
+          raise e
+        File "/home/vscode/.local/lib/python3.12/site-packages/pycardano/logging.py", line 28, in wrapper
+          output = func(obj, *args, **kwargs)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+        File "/home/vscode/.local/lib/python3.12/site-packages/pycardano/backend/base.py", line 180, in submit_tx
+          return self.submit_tx_cbor(tx.to_cbor())
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        File "/home/vscode/.local/lib/python3.12/site-packages/pycardano/backend/blockfrost.py", line 272, in submit_tx_cbor
+          raise TransactionFailedException(
+      pycardano.exception.TransactionFailedException: Failed to submit transaction. Error code: 400. Error message: {"contents":{"contents":{"contents":{"era":"ShelleyBasedEraConway","error":["ConwayUtxowFailure (UtxoFailure (InsufficientCollateral (DeltaCoin (-9953761795)) (Coin 823001)))","ConwayUtxowFailure (UtxoFailure (IncorrectTotalCollateralField (DeltaCoin (-9953761795)) (Coin 3823993)))","ConwayUtxowFailure (UtxoFailure NoCollateralInputs)","ConwayUtxowFailure (UtxoFailure (BadInputsUTxO (NonEmptySet (fromList [TxIn (TxId {unTxId = SafeHash \"6daacc0943ad89f929b89455e632a07cea917b55581576acae4e41af789ee805\"}) (TxIx {unTxIx = 2})]))))"],"kind":"ShelleyTxValidationError"},"tag":"TxValidationErrorInCardanoMode"},"tag":"TxCmdTxSubmitValidationError"},"tag":"TxSubmitFail"}
 
-[5/5] PASS  link_backward - one-time only
-    duration:  0.17s
-    detail:    SKIPPED (soft pass): backward_link already set on this deployment - one-time-only action.
+[6/6] PASS  MissingKeyError - raised correctly when role key absent
+    duration:  0.08s
+    detail:    Correctly raised MissingKeyError: This action requires the 'authority' key, but it wasn't provided at construction. Pass authority_key=... when creating CardanoNetworkClient.
 
 ==============================================================================
 SUMMARY
 ==============================================================================
   PASS  get_master_state - read
   PASS  get_stats - read
-  FAIL  mint_document - write + cross-check via find_document
-  PASS  link_forward - one-time only
-  PASS  link_backward - one-time only
+  PASS  mint_document - write + cross-check via find_document
+  FAIL  pause / resume - round-trip
+  FAIL  rotate_key - round-trip + in-memory sync check
+  PASS  MissingKeyError - raised correctly when role key absent

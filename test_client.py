@@ -450,12 +450,12 @@ def main() -> int:
     runner.run("get_master_state - read", lambda: test_get_master_state(client))
     runner.run("get_stats - read", lambda: test_get_stats(client))
     runner.run("mint_document - write + cross-check via find_document", lambda: test_mint_document(client))
-    #runner.run("pause / resume - round-trip", lambda: test_pause_resume_roundtrip(client))
-    #runner.run("rotate_key - round-trip + in-memory sync check", lambda: test_rotate_key_roundtrip(client))
+    runner.run("pause / resume - round-trip", lambda: test_pause_resume_roundtrip(client))
+    runner.run("rotate_key - round-trip + in-memory sync check", lambda: test_rotate_key_roundtrip(client))
     #runner.run("withdraw - write", lambda: test_withdraw(client))
-    runner.run("link_forward - one-time only", lambda: test_link_forward(client))
-    runner.run("link_backward - one-time only", lambda: test_link_backward(client))
-    #runner.run("MissingKeyError - raised correctly when role key absent", lambda: test_missing_key_error(client))
+    #runner.run("link_forward - one-time only", lambda: test_link_forward(client))
+    #runner.run("link_backward - one-time only", lambda: test_link_backward(client))
+    runner.run("MissingKeyError - raised correctly when role key absent", lambda: test_missing_key_error(client))
 
     runner.write_report(REPORT_PATH)
 

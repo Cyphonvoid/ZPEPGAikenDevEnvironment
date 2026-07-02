@@ -437,59 +437,6 @@ class BlockFrostBackend(BlockFrostChainContext):
             for k in vars(result.EvaluationResult)
         }
 
-    def get_raw_utxos(self, address) -> list[dict]:
-        """
-        Returns raw UTxO dicts including inline_datum hex for a given address.
-        Used by _get_script_address_items() to reliably read datum bytes —
-        pycardano's UTxO.output.datum.cbor is not always populated by
-        BlockFrostChainContext.utxos(), especially for recently confirmed UTxOs.
-        This goes directly to Blockfrost's address UTxO endpoint which always
-        includes inline_datum as a hex string when present.
-        """
-        results = self.api.address_utxos(str(address), gather_pages=True)
-        raw = []
-        for u in results:
-            d = vars(u)
-            # amount is a list of Namespace objects — convert to plain dicts
-            amount = []
-            for a in (d.get("amount") or []):
-                amount.append({"unit": a.unit, "quantity": str(a.quantity)})
-            raw.append({
-                "tx_hash": d.get("tx_hash"),
-                "output_index": d.get("output_index"),
-                "address": str(address),
-                "amount": amount,
-                "inline_datum": d.get("inline_datum"),
-            })
-        return raw
-
-    def item_to_utxo(self, item: dict) -> "UTxO":
-        """
-        Converts a raw Blockfrost UTxO dict (from get_raw_utxos) to a pycardano UTxO.
-        Mirrors YaciDevnetBackend.item_to_utxo for interface compatibility.
-        """
-        from pycardano import TransactionId, TransactionInput, TransactionOutput, Address as _Addr, Value as _Val, MultiAsset as _MA, Asset as _Asset, AssetName as _AN, ScriptHash as _SH
-        POLICY_ID_HEX_LEN = 56
-        tx_input = TransactionInput(
-            transaction_id=TransactionId(bytes.fromhex(item["tx_hash"])),
-            index=item["output_index"],
-        )
-        lovelace = 0
-        grouped: dict = {}
-        for a in item.get("amount", []):
-            if a["unit"] == "lovelace":
-                lovelace = int(a["quantity"])
-            else:
-                p = bytes.fromhex(a["unit"][:POLICY_ID_HEX_LEN])
-                n = bytes.fromhex(a["unit"][POLICY_ID_HEX_LEN:])
-                grouped.setdefault(p, {})[n] = int(a["quantity"])
-        multi_asset = _MA({_SH(p): _Asset({_AN(n): q for n, q in names.items()}) for p, names in grouped.items()})
-        tx_output = TransactionOutput(
-            address=_Addr.from_primitive(item["address"]),
-            amount=_Val(coin=lovelace, multi_asset=multi_asset),
-        )
-        return UTxO(input=tx_input, output=tx_output)
-
 
 # ════════════════════════════════════════════════════════════════════════
 # Deployment config
@@ -634,33 +581,11 @@ class LiveMasterState:
 
 @dataclass
 class TxResult:
-    """
-    Returned by every write method. Contains full transaction profile,
-    confirmation outcome, and raw details for DB storage.
-
-    success          - True if confirmed on-chain, False if retries exhausted
-    tx_hash          - locally computed tx hash (set if tx was built, else None)
-    policy_id        - the registry policy ID (hex)
-    script_address   - the registry script address (bech32)
-    beacon_asset_name - beacon asset name (hex)
-    beacon_policy_id - beacon policy ID (hex) — equals policy_id in single-script arch
-    version          - TokenDatum version (mint only, None for other operations)
-    attempts         - number of attempts made (1 = succeeded first try)
-    retry_interval_s - interval used between retries
-    error            - last error if success=False, None if success=True
-    raw_details      - JSON stringified dict with full_tx_details + used_master_utxo
-    """
-    success: bool
-    attempts: int
-    retry_interval_s: float
-    tx_hash: Optional[str] = None
-    policy_id: Optional[str] = None
-    script_address: Optional[str] = None
-    beacon_asset_name: Optional[str] = None
-    beacon_policy_id: Optional[str] = None
-    version: Optional[int] = None
-    error: Optional[str] = None
-    raw_details: Optional[str] = None
+    """Returned by every write method once confirmed on-chain."""
+    tx_hash: str
+    confirmed: bool
+    block_info: Optional[dict]
+    new_master_state: Optional[LiveMasterState] = None
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -676,7 +601,9 @@ class CardanoNetworkClient:
     CONFIRMATION_TIMEOUT_S = 180.0  # 60s was fine for devnet's near-instant blocks; real networks need more
     CONFIRMATION_POLL_INTERVAL_S = 10.0
 
-
+    # Post-write successor-state re-fetch.
+    STATE_REFETCH_TIMEOUT_S = 60.0
+    STATE_REFETCH_INTERVAL_S = 3.0
     MASTER_UTXO_FLOOR_LOVELACE = 3_000_000
     TOKEN_UTXO_FLOOR_LOVELACE = 3_000_000
     TTL_BUFFER_SLOTS = 200
@@ -1007,109 +934,37 @@ class CardanoNetworkClient:
             poll_interval_s if poll_interval_s is not None else self.CONFIRMATION_POLL_INTERVAL_S,
         )
 
-    # Error substrings that indicate transient Ogmios/indexer lag —
-    # safe to retry because the tx was never submitted (failed at eval).
-    _RETRYABLE_ERRORS = (
-        "BadInputsUTxO",
-        "ScriptFailures=Namespace()",
-        "CannotCreateEvaluationContext",
-        "Unknown transaction input",
-        "missing from UTxO set",
-    )
-
-    @classmethod
-    def _is_retryable(cls, exc: Exception) -> bool:
-        text = str(exc)
-        return any(marker in text for marker in cls._RETRYABLE_ERRORS)
-
-    def _execute_and_confirm(
-        self,
-        builder_factory,
-        retries: int = 4,
-        retry_interval_s: float = 45.0,
-    ) -> TxResult:
+    def _execute_and_confirm(self, builder_factory) -> TxResult:
         """
-        Build (via builder_factory), submit, confirm, and return TxResult.
+        Build (via builder_factory), submit, and wait for confirmation.
 
-        builder_factory is a zero-arg callable returning (TransactionBuilder, LiveMasterState).
-        It fetches get_master_state() internally so each retry works from fresh chain state.
+        builder_factory is a zero-arg callable returning a fresh
+        TransactionBuilder. Called once — no retries at this level.
+        If submission fails (script rejection, bad inputs, insufficient
+        funds) the exception propagates immediately with no masking.
 
-        Retries on transient Ogmios/indexer lag errors only (_RETRYABLE_ERRORS).
-        Any other exception surfaces immediately — no retry, no masking.
+        Confirmation and output-indexing wait is delegated entirely to
+        context.wait_for_tx_confirmed() — the backend handles all
+        provider-specific lag internally. The client knows nothing about
+        how that works, keeping network backend concerns decoupled.
         """
-        last_error = None
-        tx_hash = None
-
-        def _base_result(success, attempt, error=None, block_info=None, used_master=None):
-            raw = None
-            if block_info is not None or used_master is not None:
-                master_dict = {}
-                if used_master is not None:
-                    try:
-                        master_dict = {
-                            "tx_hash": str(used_master.utxo.input.transaction_id),
-                            "output_index": used_master.utxo.input.index,
-                            "address": str(used_master.utxo.output.address),
-                            "datum": {
-                                "nonce": used_master.datum.nonce,
-                                "is_paused": str(used_master.datum.is_paused),
-                                "policy_id": used_master.datum.policy_id.hex(),
-                                "asset_name_prefix": used_master.datum.asset_name_prefix.hex(),
-                                "total_token_count": used_master.datum.stats.total_token_count,
-                                "total_unique_documents": used_master.datum.stats.total_unique_documents,
-                                "last_minted_at": used_master.datum.stats.last_minted_at,
-                            }
-                        }
-                    except Exception:
-                        pass
-                # Convert block_info from Blockfrost Namespace to plain dict
-                try:
-                    block_info_dict = vars(block_info) if block_info and hasattr(block_info, '__dict__') else (block_info if isinstance(block_info, dict) else {})
-                    # Recursively convert any nested Namespace objects
-                    block_info_dict = json.loads(json.dumps(block_info_dict, default=lambda o: vars(o) if hasattr(o, '__dict__') else str(o)))
-                except Exception:
-                    block_info_dict = {}
-                raw = json.dumps({
-                    "full_tx_details": block_info_dict,
-                    "used_master_utxo": master_dict,
-                })
-            return TxResult(
-                success=success,
-                attempts=attempt,
-                retry_interval_s=retry_interval_s,
-                tx_hash=tx_hash,
-                policy_id=self._policy_id.hex(),
-                script_address=str(self._script_address),
-                beacon_asset_name=self._beacon_asset_name.hex(),
-                beacon_policy_id=self._policy_id.hex(),
-                error=error,
-                raw_details=raw,
-            )
-
-        for attempt in range(1, retries + 1):
-            used_master = None
-            submitted = False
+        builder = builder_factory()
+        tx_hash = self._sign_and_submit(builder)
+        block_info = self.context.wait_for_tx_confirmed(tx_hash)
+        # Re-fetch the successor master state. Since wait_for_tx_confirmed
+        # already guarantees output indexing, this read should succeed
+        # immediately in the common case.
+        new_state = None
+        deadline = time.monotonic() + self.STATE_REFETCH_TIMEOUT_S
+        while True:
             try:
-                builder, used_master = builder_factory()
-                tx_hash = self._sign_and_submit(builder)
-                submitted = True  # tx is now in flight — no retry past this point
-                block_info = self.context.wait_for_tx_confirmed(tx_hash)
-                return _base_result(True, attempt, block_info=block_info, used_master=used_master)
-
-            except Exception as e:
-                if submitted:
-                    # Tx is in mempool or confirmed — never retry, never risk double-spend
-                    return _base_result(False, attempt, error=f"Post-submission failure (tx may be in mempool or confirmed): {e}", used_master=used_master)
-                if not self._is_retryable(e):
-                    return _base_result(False, attempt, error=str(e), used_master=used_master)
-                last_error = e
-                if attempt < retries:
-                    time.sleep(retry_interval_s)
-
-        return _base_result(
-            False, retries,
-            error=f"Retries exhausted ({retries} attempts, {retry_interval_s}s interval): {last_error}",
-        )
+                new_state = self.get_master_state()
+                break
+            except Exception:
+                if time.monotonic() >= deadline:
+                    break
+                time.sleep(self.STATE_REFETCH_INTERVAL_S)
+        return TxResult(tx_hash=tx_hash, confirmed=True, block_info=block_info, new_master_state=new_state)
 
     @staticmethod
     def _carry_forward(old: MasterDatum, **overrides) -> MasterDatum:
@@ -1129,165 +984,149 @@ class CardanoNetworkClient:
     def mint_document(
         self, cross_chain_global_id: bytes, sha256_hash: bytes, upload_date: bytes,
         version: int, token_data: bytes, is_unique_document: bool, valid_lower_bound: int,
-        retries: int = 4, retry_interval_s: float = 45.0,
     ) -> TxResult:
         operator_key = self._require_operator()
+        master = self.get_master_state()
+        old_datum = master.datum
+        nonce = old_datum.nonce
 
-        def _build():
-            # Fetch fresh chain state on every attempt — never reuse a stale snapshot.
-            master = self.get_master_state()
-            old_datum = master.datum
-            nonce = old_datum.nonce
+        signed_payload = (
+            self._int_to_be_bytes(nonce, 8) + cross_chain_global_id + sha256_hash
+            + self._int_to_be_bytes(version, 4)
+        )
+        signature = self._sign_ed25519(operator_key, signed_payload)
 
-            signed_payload = (
-                self._int_to_be_bytes(nonce, 8) + cross_chain_global_id + sha256_hash
-                + self._int_to_be_bytes(version, 4)
-            )
-            signature = self._sign_ed25519(operator_key, signed_payload)
+        redeemer = MintDocument(
+            nonce=nonce, cross_chain_global_id=cross_chain_global_id, sha256_hash=sha256_hash,
+            upload_date=upload_date, version=version, token_data=token_data,
+            is_unique_document=AikenTrue() if is_unique_document else AikenFalse(),
+            valid_lower_bound=valid_lower_bound, signature=signature,
+        )
 
-            redeemer = MintDocument(
-                nonce=nonce, cross_chain_global_id=cross_chain_global_id, sha256_hash=sha256_hash,
-                upload_date=upload_date, version=version, token_data=token_data,
-                is_unique_document=AikenTrue() if is_unique_document else AikenFalse(),
-                valid_lower_bound=valid_lower_bound, signature=signature,
-            )
+        asset_name = old_datum.asset_name_prefix + self._int_to_be_bytes(nonce, 4)
+        token_id = self._policy_id + asset_name
+        expected_unique_inc = 1 if is_unique_document else 0
 
-            asset_name = old_datum.asset_name_prefix + self._int_to_be_bytes(nonce, 4)
-            token_id = self._policy_id + asset_name
-            expected_unique_inc = 1 if is_unique_document else 0
+        new_datum = self._carry_forward(
+            old_datum,
+            stats=RegistryStats(
+                total_token_count=old_datum.stats.total_token_count + 1,
+                total_unique_documents=old_datum.stats.total_unique_documents + expected_unique_inc,
+                last_minted_at=valid_lower_bound,
+                last_cross_chain_global_id=cross_chain_global_id,
+                last_cardano_asset_id=token_id,
+            ),
+        )
 
-            new_datum = self._carry_forward(
-                old_datum,
-                stats=RegistryStats(
-                    total_token_count=old_datum.stats.total_token_count + 1,
-                    total_unique_documents=old_datum.stats.total_unique_documents + expected_unique_inc,
-                    last_minted_at=valid_lower_bound,
-                    last_cross_chain_global_id=cross_chain_global_id,
-                    last_cardano_asset_id=token_id,
-                ),
-            )
+        token_datum = TokenDatum(
+            cardano_asset_id=token_id, cross_chain_global_id=cross_chain_global_id,
+            registry_address=b"", policy_id=self._policy_id,
+            source_registry_master_utxo_reference=OutputReference(
+                transaction_id=master.utxo.input.transaction_id.payload,
+                output_index=master.utxo.input.index,
+            ),
+            sha256_hash=sha256_hash, upload_date=upload_date, version=version, token_data=token_data,
+        )
 
-            token_datum = TokenDatum(
-                cardano_asset_id=token_id, cross_chain_global_id=cross_chain_global_id,
-                registry_address=b"", policy_id=self._policy_id,
-                source_registry_master_utxo_reference=OutputReference(
-                    transaction_id=master.utxo.input.transaction_id.payload,
-                    output_index=master.utxo.input.index,
-                ),
-                sha256_hash=sha256_hash, upload_date=upload_date, version=version, token_data=token_data,
-            )
+        token_multi_asset = MultiAsset({ScriptHash(self._policy_id): Asset({AssetName(asset_name): 1})})
+        token_output = TransactionOutput(
+            address=self._script_address,  # PERMANENT lock - see registry_contract.ak header
+            amount=Value(coin=self.TOKEN_UTXO_FLOOR_LOVELACE, multi_asset=token_multi_asset),
+            datum=token_datum,
+        )
 
-            token_multi_asset = MultiAsset({ScriptHash(self._policy_id): Asset({AssetName(asset_name): 1})})
-            token_output = TransactionOutput(
-                address=self._script_address,
-                amount=Value(coin=self.TOKEN_UTXO_FLOOR_LOVELACE, multi_asset=token_multi_asset),
-                datum=token_datum,
-            )
-
-            return self._build_master_spend_tx(
+        return self._execute_and_confirm(
+            lambda: self._build_master_spend_tx(
                 master, redeemer, new_datum, extra_outputs=[token_output],
                 mint_multi_asset=token_multi_asset, mint_redeemer=MintToken(),
-            ), master
-
-        result = self._execute_and_confirm(_build, retries=retries, retry_interval_s=retry_interval_s)
-        result.version = version
-        return result
+            )
+        )
 
     # ════════════════════════════════════════════════════════════════
     # Write: Pause / Resume
     # ════════════════════════════════════════════════════════════════
 
-    def pause(self, retries: int = 4, retry_interval_s: float = 45.0) -> TxResult:
+    def pause(self) -> TxResult:
         authority_key = self._require_authority()
+        master = self.get_master_state()
+        old_datum = master.datum
+        nonce = old_datum.nonce
+        signature = self._sign_ed25519(authority_key, self._int_to_be_bytes(nonce, 8) + b"PAUSE")
+        redeemer = Pause(nonce=nonce, signature=signature)
+        new_datum = self._carry_forward(old_datum, is_paused=AikenTrue())
+        return self._execute_and_confirm(
+            lambda: self._build_master_spend_tx(master, redeemer, new_datum)
+        )
 
-        def _build():
-            master = self.get_master_state()
-            old_datum = master.datum
-            nonce = old_datum.nonce
-            signature = self._sign_ed25519(authority_key, self._int_to_be_bytes(nonce, 8) + b"PAUSE")
-            redeemer = Pause(nonce=nonce, signature=signature)
-            new_datum = self._carry_forward(old_datum, is_paused=AikenTrue())
-            return self._build_master_spend_tx(master, redeemer, new_datum), master
-
-        return self._execute_and_confirm(_build, retries=retries, retry_interval_s=retry_interval_s)
-
-    def resume(self, retries: int = 4, retry_interval_s: float = 45.0) -> TxResult:
+    def resume(self) -> TxResult:
         authority_key = self._require_authority()
-
-        def _build():
-            master = self.get_master_state()
-            old_datum = master.datum
-            nonce = old_datum.nonce
-            signature = self._sign_ed25519(authority_key, self._int_to_be_bytes(nonce, 8) + b"RESUME")
-            redeemer = Resume(nonce=nonce, signature=signature)
-            new_datum = self._carry_forward(old_datum, is_paused=AikenFalse())
-            return self._build_master_spend_tx(master, redeemer, new_datum), master
-
-        return self._execute_and_confirm(_build, retries=retries, retry_interval_s=retry_interval_s)
+        master = self.get_master_state()
+        old_datum = master.datum
+        nonce = old_datum.nonce
+        signature = self._sign_ed25519(authority_key, self._int_to_be_bytes(nonce, 8) + b"RESUME")
+        redeemer = Resume(nonce=nonce, signature=signature)
+        new_datum = self._carry_forward(old_datum, is_paused=AikenFalse())
+        return self._execute_and_confirm(
+            lambda: self._build_master_spend_tx(master, redeemer, new_datum)
+        )
 
     # ════════════════════════════════════════════════════════════════
     # Write: Withdraw
     # ════════════════════════════════════════════════════════════════
 
-    def withdraw(
-        self, amount: int, destination_address: Optional[Address] = None,
-        retries: int = 4, retry_interval_s: float = 45.0,
-    ) -> TxResult:
+    def withdraw(self, amount: int, destination_address: Optional[Address] = None) -> TxResult:
         owner_key = self._require_owner()
+        master = self.get_master_state()
+        old_datum = master.datum
+        nonce = old_datum.nonce
+        signature = self._sign_ed25519(
+            owner_key, self._int_to_be_bytes(nonce, 8) + b"WITHDRAW" + self._int_to_be_bytes(amount, 8)
+        )
+        redeemer = Withdraw(nonce=nonce, amount=amount, signature=signature)
+        new_datum = self._carry_forward(old_datum)
 
-        def _build():
-            master = self.get_master_state()
-            old_datum = master.datum
-            nonce = old_datum.nonce
-            signature = self._sign_ed25519(
-                owner_key, self._int_to_be_bytes(nonce, 8) + b"WITHDRAW" + self._int_to_be_bytes(amount, 8)
-            )
-            redeemer = Withdraw(nonce=nonce, amount=amount, signature=signature)
-            new_datum = self._carry_forward(old_datum)
-            payout_address = destination_address or self._funding_address
-            withdrawal_output = TransactionOutput(address=payout_address, amount=Value(coin=amount))
-            return self._build_master_spend_tx(master, redeemer, new_datum, extra_outputs=[withdrawal_output]), master
+        payout_address = destination_address or self._funding_address
+        withdrawal_output = TransactionOutput(address=payout_address, amount=Value(coin=amount))
 
-        return self._execute_and_confirm(_build, retries=retries, retry_interval_s=retry_interval_s)
+        return self._execute_and_confirm(
+            lambda: self._build_master_spend_tx(master, redeemer, new_datum, extra_outputs=[withdrawal_output])
+        )
 
     # ════════════════════════════════════════════════════════════════
     # Write: RotateKey
     # ════════════════════════════════════════════════════════════════
 
-    def rotate_key(
-        self, key_type: str, new_key: bytes,
-        retries: int = 4, retry_interval_s: float = 45.0,
-    ) -> TxResult:
+    def rotate_key(self, key_type: str, new_key: bytes) -> TxResult:
         """key_type: 'authority' | 'operator' | 'owner'"""
         authority_key = self._require_authority()
+        master = self.get_master_state()
+        old_datum = master.datum
+        nonce = old_datum.nonce
 
         tag_map = {"authority": (AuthorityKeyTag(), b"AUTHORITY"), "operator": (OperatorKeyTag(), b"OPERATOR"), "owner": (OwnerKeyTag(), b"OWNER")}
         if key_type not in tag_map:
             raise CardanoNetworkClientError(f"key_type must be one of {list(tag_map)}, got {key_type!r}")
         key_tag, key_tag_bytes = tag_map[key_type]
 
-        def _build():
-            master = self.get_master_state()
-            old_datum = master.datum
-            nonce = old_datum.nonce
-            signature = self._sign_ed25519(
-                authority_key, self._int_to_be_bytes(nonce, 8) + b"ROTATE" + key_tag_bytes + new_key
-            )
-            redeemer = RotateKey(nonce=nonce, key_type=key_tag, new_key=new_key, signature=signature)
-            overrides = {f"{key_type}_key": new_key}
-            new_datum = self._carry_forward(old_datum, **overrides)
-            return self._build_master_spend_tx(master, redeemer, new_datum), master
+        signature = self._sign_ed25519(
+            authority_key, self._int_to_be_bytes(nonce, 8) + b"ROTATE" + key_tag_bytes + new_key
+        )
+        redeemer = RotateKey(nonce=nonce, key_type=key_tag, new_key=new_key, signature=signature)
 
-        result = self._execute_and_confirm(_build, retries=retries, retry_interval_s=retry_interval_s)
+        overrides = {f"{key_type}_key": new_key}
+        new_datum = self._carry_forward(old_datum, **overrides)
+
+        result = self._execute_and_confirm(
+            lambda: self._build_master_spend_tx(master, redeemer, new_datum)
+        )
 
         # Keep the client's own in-memory key in sync if it just rotated itself.
-        if result.success:
-            if key_type == "authority":
-                self._authority_key = new_key
-            elif key_type == "operator":
-                self._operator_key = new_key
-            elif key_type == "owner":
-                self._owner_key = new_key
+        if key_type == "authority":
+            self._authority_key = new_key
+        elif key_type == "operator":
+            self._operator_key = new_key
+        elif key_type == "owner":
+            self._owner_key = new_key
         return result
 
     # ════════════════════════════════════════════════════════════════
@@ -1297,60 +1136,56 @@ class CardanoNetworkClient:
     def link_forward(
         self, next_script_address: bytes, next_policy_id: bytes, link_reason: bytes,
         linked_at: int, instructions: bytes,
-        retries: int = 4, retry_interval_s: float = 45.0,
     ) -> TxResult:
         authority_key = self._require_authority()
+        master = self.get_master_state()
+        old_datum = master.datum
+        nonce = old_datum.nonce
 
-        def _build():
-            master = self.get_master_state()
-            old_datum = master.datum
-            nonce = old_datum.nonce
-            signature = self._sign_ed25519(
-                authority_key,
-                self._int_to_be_bytes(nonce, 8) + next_policy_id + next_script_address + link_reason,
-            )
-            redeemer = LinkForward(
-                nonce=nonce, next_script_address=next_script_address, next_policy_id=next_policy_id,
-                link_reason=link_reason, linked_at=linked_at, instructions=instructions, signature=signature,
-            )
-            chain_link = DeploymentChainLink(
-                next_script_address=next_script_address, next_policy_id=next_policy_id,
-                link_reason=link_reason, linked_at=linked_at, instructions=instructions,
-                current_authority_key=old_datum.authority_key, signature=signature, nonce_at_link=nonce,
-            )
-            new_datum = self._carry_forward(old_datum, forward_link=SomeChainLink(value=chain_link))
-            return self._build_master_spend_tx(master, redeemer, new_datum), master
-
-        return self._execute_and_confirm(_build, retries=retries, retry_interval_s=retry_interval_s)
+        signature = self._sign_ed25519(
+            authority_key,
+            self._int_to_be_bytes(nonce, 8) + next_policy_id + next_script_address + link_reason,
+        )
+        redeemer = LinkForward(
+            nonce=nonce, next_script_address=next_script_address, next_policy_id=next_policy_id,
+            link_reason=link_reason, linked_at=linked_at, instructions=instructions, signature=signature,
+        )
+        chain_link = DeploymentChainLink(
+            next_script_address=next_script_address, next_policy_id=next_policy_id,
+            link_reason=link_reason, linked_at=linked_at, instructions=instructions,
+            current_authority_key=old_datum.authority_key, signature=signature, nonce_at_link=nonce,
+        )
+        new_datum = self._carry_forward(old_datum, forward_link=SomeChainLink(value=chain_link))
+        return self._execute_and_confirm(
+            lambda: self._build_master_spend_tx(master, redeemer, new_datum)
+        )
 
     def link_backward(
         self, prev_script_address: bytes, prev_policy_id: bytes, link_reason: bytes,
         linked_at: int, instructions: bytes,
-        retries: int = 4, retry_interval_s: float = 45.0,
     ) -> TxResult:
         authority_key = self._require_authority()
+        master = self.get_master_state()
+        old_datum = master.datum
+        nonce = old_datum.nonce
 
-        def _build():
-            master = self.get_master_state()
-            old_datum = master.datum
-            nonce = old_datum.nonce
-            signature = self._sign_ed25519(
-                authority_key,
-                self._int_to_be_bytes(nonce, 8) + prev_policy_id + prev_script_address + link_reason,
-            )
-            redeemer = LinkBackward(
-                nonce=nonce, prev_script_address=prev_script_address, prev_policy_id=prev_policy_id,
-                link_reason=link_reason, linked_at=linked_at, instructions=instructions, signature=signature,
-            )
-            chain_link = DeploymentChainLink(
-                next_script_address=prev_script_address, next_policy_id=prev_policy_id,
-                link_reason=link_reason, linked_at=linked_at, instructions=instructions,
-                current_authority_key=old_datum.authority_key, signature=signature, nonce_at_link=nonce,
-            )
-            new_datum = self._carry_forward(old_datum, backward_link=SomeChainLink(value=chain_link))
-            return self._build_master_spend_tx(master, redeemer, new_datum), master
-
-        return self._execute_and_confirm(_build, retries=retries, retry_interval_s=retry_interval_s)
+        signature = self._sign_ed25519(
+            authority_key,
+            self._int_to_be_bytes(nonce, 8) + prev_policy_id + prev_script_address + link_reason,
+        )
+        redeemer = LinkBackward(
+            nonce=nonce, prev_script_address=prev_script_address, prev_policy_id=prev_policy_id,
+            link_reason=link_reason, linked_at=linked_at, instructions=instructions, signature=signature,
+        )
+        chain_link = DeploymentChainLink(
+            next_script_address=prev_script_address, next_policy_id=prev_policy_id,
+            link_reason=link_reason, linked_at=linked_at, instructions=instructions,
+            current_authority_key=old_datum.authority_key, signature=signature, nonce_at_link=nonce,
+        )
+        new_datum = self._carry_forward(old_datum, backward_link=SomeChainLink(value=chain_link))
+        return self._execute_and_confirm(
+            lambda: self._build_master_spend_tx(master, redeemer, new_datum)
+        )
 
     # ════════════════════════════════════════════════════════════════
     # Genesis: pure class-level functionality, deliberately NOT an
@@ -1534,15 +1369,7 @@ class CardanoNetworkClient:
         block_info = cls._wait_for_confirmation_static(
             context, tx_hash, cls.CONFIRMATION_TIMEOUT_S, cls.CONFIRMATION_POLL_INTERVAL_S
         )
-        tx_result = TxResult(
-            success=True, attempts=1, retry_interval_s=0.0,
-            tx_hash=tx_hash,
-            policy_id=applied.policy_id_hex,
-            script_address=str(script_address),
-            beacon_asset_name=beacon_asset_name.hex(),
-            beacon_policy_id=applied.policy_id_hex,
-            raw_details=json.dumps({"full_tx_details": block_info if block_info else {}, "used_master_utxo": {}}),
-        )
+        tx_result = TxResult(tx_hash=tx_hash, confirmed=True, block_info=block_info, new_master_state=None)
 
         deployment_json_path_str = str(deployment_json_output_path) if deployment_json_output_path is not None else None
 
@@ -1609,3 +1436,4 @@ class CardanoNetworkClient:
             network_type=network_type,
         )
         return client, genesis
+
