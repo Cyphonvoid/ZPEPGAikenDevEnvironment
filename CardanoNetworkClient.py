@@ -1029,9 +1029,15 @@ class CardanoNetworkClient:
                 tx_hash = self._sign_and_submit(builder)
                 submitted = True  # tx is now in flight — no retry past this point
                 block_info = self.context.wait_for_tx_confirmed(tx_hash)
+
+                if isinstance(used_master, LiveMasterState) == False:
+                    print("BUILDER RETURNED EMPTY USED_MASTER!!!! IN TRY!!")
                 return _base_result(True, attempt, block_info=block_info, used_master=used_master)
 
             except Exception as e:
+                if isinstance(used_master, LiveMasterState) == False:
+                    print("BUILDER RETURNED EMPTY USED_MASTER!!!! IN EXCEPTION!!!")
+                    
                 if submitted:
                     return _base_result(False, attempt, error=f"Post-submission failure (tx may be in mempool or confirmed): {e}", used_master=used_master)
                 if not self._is_retryable(e):
