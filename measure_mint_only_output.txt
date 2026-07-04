@@ -1,0 +1,86 @@
+
+============================================================
+MINT CYCLE 1/10
+============================================================
+BEFORE: master=996ad6aed1f592f22d115471918761ba33d7abf3ff1602bd2114a627b074fb36#0 nonce=188 token_count=4
+success=False tx=None call_duration=1.1s
+FULL ERROR: Namespace(EvaluationFailure=Namespace(ScriptFailures=Namespace()))
+
+============================================================
+MINT CYCLE 2/10
+============================================================
+BEFORE: master=996ad6aed1f592f22d115471918761ba33d7abf3ff1602bd2114a627b074fb36#0 nonce=188 token_count=4
+success=False tx=None call_duration=0.9s
+FULL ERROR: Namespace(EvaluationFailure=Namespace(ScriptFailures=Namespace()))
+
+============================================================
+MINT CYCLE 3/10
+============================================================
+BEFORE: master=996ad6aed1f592f22d115471918761ba33d7abf3ff1602bd2114a627b074fb36#0 nonce=188 token_count=4
+success=False tx=None call_duration=0.9s
+FULL ERROR: Namespace(EvaluationFailure=Namespace(ScriptFailures=Namespace()))
+
+============================================================
+MINT CYCLE 4/10
+============================================================
+BEFORE: master=996ad6aed1f592f22d115471918761ba33d7abf3ff1602bd2114a627b074fb36#0 nonce=188 token_count=4
+success=False tx=None call_duration=0.9s
+FULL ERROR: Namespace(EvaluationFailure=Namespace(ScriptFailures=Namespace()))
+
+============================================================
+MINT CYCLE 5/10
+============================================================
+BEFORE: master=996ad6aed1f592f22d115471918761ba33d7abf3ff1602bd2114a627b074fb36#0 nonce=188 token_count=4
+success=False tx=None call_duration=0.9s
+FULL ERROR: Namespace(EvaluationFailure=Namespace(ScriptFailures=Namespace()))
+
+============================================================
+MINT CYCLE 6/10
+============================================================
+BEFORE: master=996ad6aed1f592f22d115471918761ba33d7abf3ff1602bd2114a627b074fb36#0 nonce=188 token_count=4
+success=False tx=None call_duration=0.9s
+FULL ERROR: Namespace(EvaluationFailure=Namespace(ScriptFailures=Namespace()))
+
+============================================================
+MINT CYCLE 7/10
+============================================================
+BEFORE: master=996ad6aed1f592f22d115471918761ba33d7abf3ff1602bd2114a627b074fb36#0 nonce=188 token_count=4
+success=False tx=None call_duration=0.9s
+FULL ERROR: Namespace(EvaluationFailure=Namespace(ScriptFailures=Namespace()))
+
+============================================================
+MINT CYCLE 8/10
+============================================================
+BEFORE: master=996ad6aed1f592f22d115471918761ba33d7abf3ff1602bd2114a627b074fb36#0 nonce=188 token_count=4
+success=False tx=None call_duration=0.8s
+FULL ERROR: Namespace(EvaluationFailure=Namespace(ScriptFailures=Namespace()))
+
+============================================================
+MINT CYCLE 9/10
+============================================================
+BEFORE: master=996ad6aed1f592f22d115471918761ba33d7abf3ff1602bd2114a627b074fb36#0 nonce=188 token_count=4
+success=False tx=None call_duration=0.8s
+FULL ERROR: Namespace(EvaluationFailure=Namespace(ScriptFailures=Namespace()))
+
+============================================================
+MINT CYCLE 10/10
+============================================================
+BEFORE: master=996ad6aed1f592f22d115471918761ba33d7abf3ff1602bd2114a627b074fb36#0 nonce=188 token_count=4
+success=False tx=None call_duration=0.8s
+FULL ERROR: Namespace(EvaluationFailure=Namespace(ScriptFailures=Namespace()))
+
+
+============================================================
+SUMMARY
+============================================================
+Passed: 0/10
+  Cycle 1: FAILED (call=1.1s) - Namespace(EvaluationFailure=Namespace(ScriptFailures=Namespace()))
+  Cycle 2: FAILED (call=0.9s) - Namespace(EvaluationFailure=Namespace(ScriptFailures=Namespace()))
+  Cycle 3: FAILED (call=0.9s) - Namespace(EvaluationFailure=Namespace(ScriptFailures=Namespace()))
+  Cycle 4: FAILED (call=0.9s) - Namespace(EvaluationFailure=Namespace(ScriptFailures=Namespace()))
+  Cycle 5: FAILED (call=0.9s) - Namespace(EvaluationFailure=Namespace(ScriptFailures=Namespace()))
+  Cycle 6: FAILED (call=0.9s) - Namespace(EvaluationFailure=Namespace(ScriptFailures=Namespace()))
+  Cycle 7: FAILED (call=0.9s) - Namespace(EvaluationFailure=Namespace(ScriptFailures=Namespace()))
+  Cycle 8: FAILED (call=0.8s) - Namespace(EvaluationFailure=Namespace(ScriptFailures=Namespace()))
+  Cycle 9: FAILED (call=0.8s) - Namespace(EvaluationFailure=Namespace(ScriptFailures=Namespace()))
+  Cycle 10: FAILED (call=0.8s) - Namespace(EvaluationFailure=Namespace(ScriptFailures=Namespace()))

@@ -720,43 +720,43 @@ class CardanoNetworkClient:
         else:
             results = []
             for u in self.context.utxos(self._script_address):
-                datum_bytes = None
-                if u.output.datum is not None:
-                    try:
-                        datum_bytes = u.output.datum.cbor
-                    except AttributeError:
-                        pass
+                datum_bytes = u.output.datum.cbor
                 results.append((u, datum_bytes))
             return results
 
-    def _find_master_utxo(self) -> UTxO:
-        for utxo, _ in self._get_script_address_items():
+    def get_master_state(self) -> LiveMasterState:
+        """
+        Fetches the script address UTXO set exactly ONCE and finds the
+        beacon-carrying (master) UTXO plus its datum in that same pass —
+        avoiding a prior bug where the master UTXO was located via one
+        fetch, then a SEPARATE second fetch was made to find its datum.
+        Two independent network calls to the same endpoint created a race
+        window where the UTXO set could shift between calls, occasionally
+        causing the second fetch to come back with no datum for a UTXO
+        that unquestionably has one on-chain. Single fetch, single source
+        of truth, no window.
+        """
+        items = self._get_script_address_items()
+        for utxo, datum_bytes in items:
             qty = utxo.output.amount.multi_asset.get(ScriptHash(self._policy_id), {}).get(
                 AssetName(self._beacon_asset_name)
             )
             if qty == 1:
-                return utxo
+                if datum_bytes is None:
+                    raise CardanoNetworkClientError(
+                        "Master UTXO has no inline datum - contract state is invalid."
+                    )
+                datum = MasterDatum.from_cbor(datum_bytes)
+                return LiveMasterState(
+                    utxo=utxo,
+                    datum=datum,
+                    policy_id=self._policy_id,
+                    script_address=self._script_address,
+                    beacon_asset_name=self._beacon_asset_name,
+                )
         raise CardanoNetworkClientError(
             f"No UTXO at {self._script_address} currently holds the beacon. "
             f"Has genesis run? Is deployment.json correct for this network?"
-        )
-
-    def get_master_state(self) -> LiveMasterState:
-        target_utxo = self._find_master_utxo()
-        datum_bytes = None
-        for utxo, db in self._get_script_address_items():
-            if utxo.input == target_utxo.input:
-                datum_bytes = db
-                break
-        if datum_bytes is None:
-            raise CardanoNetworkClientError("Master UTXO has no inline datum - contract state is invalid.")
-        datum = MasterDatum.from_cbor(datum_bytes)
-        return LiveMasterState(
-            utxo=target_utxo,
-            datum=datum,
-            policy_id=self._policy_id,
-            script_address=self._script_address,
-            beacon_asset_name=self._beacon_asset_name,
         )
 
     def find_document(self, asset_name: bytes) -> Optional[TokenDatum]:
@@ -852,12 +852,14 @@ class CardanoNetworkClient:
         # Store script UTxOs + their datum bytes on the context so
         # BlockFrostBackend.evaluate_tx_cbor can pass them as the
         # additionalUtxoSet — required for Conway/PlutusV3 inline datum
-        # resolution during Blockfrost script evaluation.
+        # resolution during Blockfrost script evaluation. Built directly
+        # from `master` (already fetched by the caller moments earlier)
+        # rather than re-querying the script address again here — that
+        # redundant extra fetch was the same class of bug as the one
+        # fixed in get_master_state(): an unnecessary second network call
+        # to data already in hand, creating an avoidable race window.
         if hasattr(self.context, '_script_utxos_for_eval'):
-            items = self._get_script_address_items()
-            master_items = [(u, db) for u, db in items
-                           if u.input == master.utxo.input]
-            self.context._script_utxos_for_eval = master_items
+            self.context._script_utxos_for_eval = [(master.utxo, master.datum.to_cbor())]
         builder.add_output(master_output)
         for out in (extra_outputs or []):
             builder.add_output(out)
@@ -1029,21 +1031,15 @@ class CardanoNetworkClient:
                 tx_hash = self._sign_and_submit(builder)
                 submitted = True  # tx is now in flight — no retry past this point
                 block_info = self.context.wait_for_tx_confirmed(tx_hash)
-
-                if isinstance(used_master, LiveMasterState) == False:
-                    print("BUILDER RETURNED EMPTY USED_MASTER!!!! IN TRY!!")
                 return _base_result(True, attempt, block_info=block_info, used_master=used_master)
 
             except Exception as e:
-                if isinstance(used_master, LiveMasterState) == False:
-                    print("BUILDER RETURNED EMPTY USED_MASTER!!!! IN EXCEPTION!!!")
-                    
                 if submitted:
                     return _base_result(False, attempt, error=f"Post-submission failure (tx may be in mempool or confirmed): {e}", used_master=used_master)
                 if not self._is_retryable(e):
                     try:
                         return _base_result(False, attempt, error=str(e), used_master=used_master)
-                    except Exception as base_err:
+                    except Exception:
                         raise e from None
                 last_error = e
                 if attempt < retries:
@@ -1299,38 +1295,6 @@ class CardanoNetworkClient:
     # Genesis: pure class-level functionality, deliberately NOT an
     # instance method
     # ════════════════════════════════════════════════════════════════
-    #
-    # A CardanoNetworkClient INSTANCE represents interaction with an
-    # ALREADY-DEPLOYED contract - that's the entire reason its
-    # constructor requires a DeploymentConfig describing something that
-    # already exists. Genesis is conceptually different: it's the act of
-    # making a deployment exist in the first place. Putting it on an
-    # instance (even via a classmethod that quietly constructs one
-    # internally) blurs that boundary - it implies operating on a
-    # deployment that isn't real yet. So genesis lives ENTIRELY at the
-    # class level here: no self anywhere, no instance constructed until
-    # (optionally) after genesis has genuinely succeeded.
-    #
-    # Two tiers:
-    #   initiate_contract_genesis() - the actual genesis mechanics only.
-    #       Builds and submits the genesis transaction directly. Returns
-    #       a GenesisResult with everything about what was deployed -
-    #       NOT a client, since handing back something that represents
-    #       "ongoing interaction" isn't this function's concern.
-    #   deploy_contract() - the convenience wrapper. Calls
-    #       initiate_contract_genesis() first, and only once the
-    #       deployment genuinely exists does it construct and return a
-    #       CardanoNetworkClient instance pointed at it - consistent,
-    #       since at that point the instance represents real, already-
-    #       existing interaction, exactly what an instance is for.
-    #
-    # A client built this way is NOT special or "more authoritative"
-    # than one built later via the plain constructor against the same
-    # deployment.json - the client holds no meaningful state of its own
-    # beyond in-memory key tracking (kept in sync by rotate_key()).
-    # Discarding deploy_contract()'s returned client and constructing a
-    # fresh one later, pointed at the same deployment.json, is fully
-    # equivalent.
 
     @dataclass(frozen=True)
     class GenesisResult:
@@ -1446,11 +1410,6 @@ class CardanoNetworkClient:
 
         tx_hash = cls._sign_and_submit_static(builder, context, funding_key, funding_address)
 
-        # Write the complete, fully-populated deployment.json immediately
-        # after submission. tx_hash is already known at this point (it's
-        # computed locally from the signed transaction before submission,
-        # same as everywhere else in this client). Confirmation polling
-        # happens AFTER this write, so a timeout can never lose any data.
         if deployment_json_output_path is not None:
             complete_record = {
                 "network": network_type.value,
@@ -1518,13 +1477,7 @@ class CardanoNetworkClient:
         Convenience wrapper: runs initiate_contract_genesis(), then -
         only once the deployment genuinely exists on-chain - constructs
         and returns a ready-to-use CardanoNetworkClient instance pointed
-        at it, alongside the GenesisResult. The returned client is not
-        special; discarding it and constructing a fresh one later via
-        the plain constructor + the same deployment.json is equivalent.
-
-        deployment_json_output_path should be given here (vs. left None)
-        in essentially all real uses, since otherwise there's no
-        deployment.json for any later client construction to point at.
+        at it, alongside the GenesisResult.
         """
         genesis = cls.initiate_contract_genesis(
             funding_signing_key=funding_signing_key, operator_key=operator_key,

@@ -14,7 +14,7 @@ one-shot, carefully-reviewed real-network deployments, not casual re-runs.
 import json
 from pathlib import Path
 
-from CardanoNetworkClient import CardanoNetworkClient, CardanoNet
+from CardanoNetworkClient_v5 import CardanoNetworkClient, CardanoNet
 
 # ════════════════════════════════════════════════════════════════════════
 # CONFIG - review every value carefully before running against a real network

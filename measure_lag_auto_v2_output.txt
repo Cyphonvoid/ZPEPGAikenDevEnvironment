@@ -1,0 +1,186 @@
+
+============================================================
+CYCLE 1/15
+============================================================
+BEFORE: master=c14783c00d3633201bcb0fc3587a26cb66a9662c357c081c8c54283aee7b70cb#0 nonce=153 is_paused=True
+Calling: resume()
+success=True tx=38ab52cc2b6f42b48ad6f92216b231004f1156db2a94510a7dc82ca0d92aa6f1 call_duration=13.5s
+AFTER:  master=38ab52cc2b6f42b48ad6f92216b231004f1156db2a94510a7dc82ca0d92aa6f1#0 nonce=154 is_paused=False
+Master UTXO after-read matches the tx we just confirmed? True
+Funding set already reflects the change immediately? False
+Funding set changed during poll after 0.0s (1 polls) - UNEXPECTED, nothing else should be running
+
+============================================================
+CYCLE 2/15
+============================================================
+BEFORE: master=38ab52cc2b6f42b48ad6f92216b231004f1156db2a94510a7dc82ca0d92aa6f1#0 nonce=154 is_paused=False
+Calling: pause()
+success=True tx=d03ac5cc533d52a03c2c3807d81f893426330ae95c4680fd138ac1711a26bce3 call_duration=51.8s
+AFTER:  master=d03ac5cc533d52a03c2c3807d81f893426330ae95c4680fd138ac1711a26bce3#0 nonce=155 is_paused=True
+Master UTXO after-read matches the tx we just confirmed? True
+Funding set already reflects the change immediately? True
+Funding set stable for the full 60.0s poll window (30 polls) - expected
+
+============================================================
+CYCLE 3/15
+============================================================
+BEFORE: master=d03ac5cc533d52a03c2c3807d81f893426330ae95c4680fd138ac1711a26bce3#0 nonce=155 is_paused=True
+Calling: resume()
+success=True tx=f629a784a70dc021b84d4b3a11c75021afd7b9f45d29b0e4d750f78096a5e823 call_duration=13.3s
+AFTER:  master=f629a784a70dc021b84d4b3a11c75021afd7b9f45d29b0e4d750f78096a5e823#0 nonce=156 is_paused=False
+Master UTXO after-read matches the tx we just confirmed? True
+Funding set already reflects the change immediately? False
+Funding set changed during poll after 0.0s (1 polls) - UNEXPECTED, nothing else should be running
+
+============================================================
+CYCLE 4/15
+============================================================
+BEFORE: master=f629a784a70dc021b84d4b3a11c75021afd7b9f45d29b0e4d750f78096a5e823#0 nonce=156 is_paused=False
+Calling: pause()
+success=True tx=31e320e33f5e259911c8dacb1df8a5897a8847c142a26b0deadb02a77306ce8d call_duration=33.6s
+AFTER:  master=31e320e33f5e259911c8dacb1df8a5897a8847c142a26b0deadb02a77306ce8d#0 nonce=157 is_paused=True
+Master UTXO after-read matches the tx we just confirmed? True
+Funding set already reflects the change immediately? False
+Funding set changed during poll after 0.0s (1 polls) - UNEXPECTED, nothing else should be running
+
+============================================================
+CYCLE 5/15
+============================================================
+BEFORE: master=31e320e33f5e259911c8dacb1df8a5897a8847c142a26b0deadb02a77306ce8d#0 nonce=157 is_paused=True
+Calling: resume()
+success=True tx=ec544b83b5e8f6a94390bbb47255ba2b86c8b0badd166d6036d37059f954e4f1 call_duration=28.5s
+AFTER:  master=ec544b83b5e8f6a94390bbb47255ba2b86c8b0badd166d6036d37059f954e4f1#0 nonce=158 is_paused=False
+Master UTXO after-read matches the tx we just confirmed? True
+Funding set already reflects the change immediately? False
+Funding set changed during poll after 0.0s (1 polls) - UNEXPECTED, nothing else should be running
+
+============================================================
+CYCLE 6/15
+============================================================
+BEFORE: master=ec544b83b5e8f6a94390bbb47255ba2b86c8b0badd166d6036d37059f954e4f1#0 nonce=158 is_paused=False
+Calling: pause()
+success=True tx=a87622f1f81e5d607f75d3200a1d2b8cbc788697be7a12662dcf163e54531652 call_duration=33.7s
+AFTER:  master=a87622f1f81e5d607f75d3200a1d2b8cbc788697be7a12662dcf163e54531652#0 nonce=159 is_paused=True
+Master UTXO after-read matches the tx we just confirmed? True
+Funding set already reflects the change immediately? False
+Funding set changed during poll after 0.0s (1 polls) - UNEXPECTED, nothing else should be running
+
+============================================================
+CYCLE 7/15
+============================================================
+BEFORE: master=a87622f1f81e5d607f75d3200a1d2b8cbc788697be7a12662dcf163e54531652#0 nonce=159 is_paused=True
+Calling: resume()
+success=True tx=b573363392000ca91c03f4dafdff62cda1b2bee20d9ce0ec1e3f1e5aaa25af86 call_duration=23.4s
+AFTER:  master=b573363392000ca91c03f4dafdff62cda1b2bee20d9ce0ec1e3f1e5aaa25af86#0 nonce=160 is_paused=False
+Master UTXO after-read matches the tx we just confirmed? True
+Funding set already reflects the change immediately? False
+Funding set changed during poll after 0.0s (1 polls) - UNEXPECTED, nothing else should be running
+
+============================================================
+CYCLE 8/15
+============================================================
+BEFORE: master=b573363392000ca91c03f4dafdff62cda1b2bee20d9ce0ec1e3f1e5aaa25af86#0 nonce=160 is_paused=False
+Calling: pause()
+success=True tx=67ac4cb60479703fb39c571625984c4712b800c21ddf2931d44d52efe8062590 call_duration=23.4s
+AFTER:  master=67ac4cb60479703fb39c571625984c4712b800c21ddf2931d44d52efe8062590#0 nonce=161 is_paused=True
+Master UTXO after-read matches the tx we just confirmed? True
+Funding set already reflects the change immediately? False
+Funding set changed during poll after 0.0s (1 polls) - UNEXPECTED, nothing else should be running
+
+============================================================
+CYCLE 9/15
+============================================================
+BEFORE: master=67ac4cb60479703fb39c571625984c4712b800c21ddf2931d44d52efe8062590#0 nonce=161 is_paused=True
+Calling: resume()
+success=True tx=9daacc97f7244cc0ea9a4e06a311f29530cb8f0d46cc83a4efeb0709a6e651d3 call_duration=23.4s
+AFTER:  master=9daacc97f7244cc0ea9a4e06a311f29530cb8f0d46cc83a4efeb0709a6e651d3#0 nonce=162 is_paused=False
+Master UTXO after-read matches the tx we just confirmed? True
+Funding set already reflects the change immediately? False
+Funding set changed during poll after 0.0s (1 polls) - UNEXPECTED, nothing else should be running
+
+============================================================
+CYCLE 10/15
+============================================================
+BEFORE: master=9daacc97f7244cc0ea9a4e06a311f29530cb8f0d46cc83a4efeb0709a6e651d3#0 nonce=162 is_paused=False
+Calling: pause()
+success=True tx=852cb21c7d10eed858c00a9d3e5b12eb005c4f6242c9e924dc55b2bc1d309c8a call_duration=102.6s
+AFTER:  master=852cb21c7d10eed858c00a9d3e5b12eb005c4f6242c9e924dc55b2bc1d309c8a#0 nonce=163 is_paused=True
+Master UTXO after-read matches the tx we just confirmed? True
+Funding set already reflects the change immediately? True
+Funding set stable for the full 60.0s poll window (30 polls) - expected
+
+============================================================
+CYCLE 11/15
+============================================================
+BEFORE: master=852cb21c7d10eed858c00a9d3e5b12eb005c4f6242c9e924dc55b2bc1d309c8a#0 nonce=163 is_paused=True
+Calling: resume()
+success=True tx=112d2fbf400fec91d50d67a24d2b76ba073663b0d5d3599920abf412ecace12d call_duration=13.4s
+AFTER:  master=112d2fbf400fec91d50d67a24d2b76ba073663b0d5d3599920abf412ecace12d#0 nonce=164 is_paused=False
+Master UTXO after-read matches the tx we just confirmed? True
+Funding set already reflects the change immediately? False
+Funding set changed during poll after 0.0s (1 polls) - UNEXPECTED, nothing else should be running
+
+============================================================
+CYCLE 12/15
+============================================================
+BEFORE: master=112d2fbf400fec91d50d67a24d2b76ba073663b0d5d3599920abf412ecace12d#0 nonce=164 is_paused=False
+Calling: pause()
+success=True tx=42ab1977b8f4ac64f4d265cc12d1ef31b86527ab7369042d63e7584a5585d53b call_duration=23.4s
+AFTER:  master=42ab1977b8f4ac64f4d265cc12d1ef31b86527ab7369042d63e7584a5585d53b#0 nonce=165 is_paused=True
+Master UTXO after-read matches the tx we just confirmed? True
+Funding set already reflects the change immediately? False
+Funding set changed during poll after 0.0s (1 polls) - UNEXPECTED, nothing else should be running
+
+============================================================
+CYCLE 13/15
+============================================================
+BEFORE: master=42ab1977b8f4ac64f4d265cc12d1ef31b86527ab7369042d63e7584a5585d53b#0 nonce=165 is_paused=True
+Calling: resume()
+success=True tx=e2603abf7f99b242ef7f1fe6b170ad2203b0d71b0961715a2eea18c204706fae call_duration=13.3s
+AFTER:  master=e2603abf7f99b242ef7f1fe6b170ad2203b0d71b0961715a2eea18c204706fae#0 nonce=166 is_paused=False
+Master UTXO after-read matches the tx we just confirmed? True
+Funding set already reflects the change immediately? False
+Funding set changed during poll after 0.0s (1 polls) - UNEXPECTED, nothing else should be running
+
+============================================================
+CYCLE 14/15
+============================================================
+BEFORE: master=e2603abf7f99b242ef7f1fe6b170ad2203b0d71b0961715a2eea18c204706fae#0 nonce=166 is_paused=False
+Calling: pause()
+success=True tx=244f4b7ee0c56e0138ec08efb69d7cbde4643d9ebc36fb8ecb5ff0e661e51d07 call_duration=23.4s
+AFTER:  master=244f4b7ee0c56e0138ec08efb69d7cbde4643d9ebc36fb8ecb5ff0e661e51d07#0 nonce=167 is_paused=True
+Master UTXO after-read matches the tx we just confirmed? True
+Funding set already reflects the change immediately? False
+Funding set changed during poll after 0.0s (1 polls) - UNEXPECTED, nothing else should be running
+
+============================================================
+CYCLE 15/15
+============================================================
+BEFORE: master=244f4b7ee0c56e0138ec08efb69d7cbde4643d9ebc36fb8ecb5ff0e661e51d07#0 nonce=167 is_paused=True
+Calling: resume()
+success=True tx=198bf35a1aaf541a36ca2e84c8d6aa123c9e43c535d11e7aebd64659cdffd2ba call_duration=13.3s
+AFTER:  master=198bf35a1aaf541a36ca2e84c8d6aa123c9e43c535d11e7aebd64659cdffd2ba#0 nonce=168 is_paused=False
+Master UTXO after-read matches the tx we just confirmed? True
+Funding set already reflects the change immediately? False
+Funding set changed during poll after 0.0s (1 polls) - UNEXPECTED, nothing else should be running
+
+
+============================================================
+SUMMARY
+============================================================
+Passed: 15/15
+  Cycle 1 (resume): OK, call=13.5s, master_matches_tx=True, funding_changed_immediately=False, unexpected_change_during_poll=True
+  Cycle 2 (pause): OK, call=51.8s, master_matches_tx=True, funding_changed_immediately=True, unexpected_change_during_poll=False
+  Cycle 3 (resume): OK, call=13.3s, master_matches_tx=True, funding_changed_immediately=False, unexpected_change_during_poll=True
+  Cycle 4 (pause): OK, call=33.6s, master_matches_tx=True, funding_changed_immediately=False, unexpected_change_during_poll=True
+  Cycle 5 (resume): OK, call=28.5s, master_matches_tx=True, funding_changed_immediately=False, unexpected_change_during_poll=True
+  Cycle 6 (pause): OK, call=33.7s, master_matches_tx=True, funding_changed_immediately=False, unexpected_change_during_poll=True
+  Cycle 7 (resume): OK, call=23.4s, master_matches_tx=True, funding_changed_immediately=False, unexpected_change_during_poll=True
+  Cycle 8 (pause): OK, call=23.4s, master_matches_tx=True, funding_changed_immediately=False, unexpected_change_during_poll=True
+  Cycle 9 (resume): OK, call=23.4s, master_matches_tx=True, funding_changed_immediately=False, unexpected_change_during_poll=True
+  Cycle 10 (pause): OK, call=102.6s, master_matches_tx=True, funding_changed_immediately=True, unexpected_change_during_poll=False
+  Cycle 11 (resume): OK, call=13.4s, master_matches_tx=True, funding_changed_immediately=False, unexpected_change_during_poll=True
+  Cycle 12 (pause): OK, call=23.4s, master_matches_tx=True, funding_changed_immediately=False, unexpected_change_during_poll=True
+  Cycle 13 (resume): OK, call=13.3s, master_matches_tx=True, funding_changed_immediately=False, unexpected_change_during_poll=True
+  Cycle 14 (pause): OK, call=23.4s, master_matches_tx=True, funding_changed_immediately=False, unexpected_change_during_poll=True
+  Cycle 15 (resume): OK, call=13.3s, master_matches_tx=True, funding_changed_immediately=False, unexpected_change_during_poll=True

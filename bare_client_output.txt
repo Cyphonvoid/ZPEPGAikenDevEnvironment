@@ -1,0 +1,16 @@
+
+===== CYCLE 1/1 =====
+--- RESUME ---
+Resume is about to spend UTXO: 4c3d205d13d8cbde2fdf8c59034b48cb7b4cc8e32f831e1e1236d4f3d22415f5#0
+success=True tx=6abbba9f60ea5f42e28615211f6e18b11a18be9a0da46dc5034693272c479679
+Immediately after Resume confirmed, master UTXO is: 4c3d205d13d8cbde2fdf8c59034b48cb7b4cc8e32f831e1e1236d4f3d22415f5#0
+nonce=119 is_paused=AikenTrue()
+--- PAUSE ---
+Pause is about to spend UTXO: 6abbba9f60ea5f42e28615211f6e18b11a18be9a0da46dc5034693272c479679#0
+That UTXO's nonce: 120  is_paused: AikenFalse()
+success=False tx=None
+error=Failed to submit transaction. Error code: 400. Error message: {"contents":{"contents":{"contents":{"era":"ShelleyBasedEraConway","error":["ConwayUtxowFailure (UtxoFailure (InsufficientCollateral (DeltaCoin (-9699521734)) (Coin 850326)))","ConwayUtxowFailure (UtxoFailure (IncorrectTotalCollateralField (DeltaCoin (-9699521734)) (Coin 3823993)))","ConwayUtxowFailure (UtxoFailure NoCollateralInputs)","ConwayUtxowFailure (UtxoFailure (BadInputsUTxO (NonEmptySet (fromList [TxIn (TxId {unTxId = SafeHash \"4c3d205d13d8cbde2fdf8c59034b48cb7b4cc8e32f831e1e1236d4f3d22415f5\"}) (TxIx {unTxIx = 1})]))))"],"kind":"ShelleyTxValidationError"},"tag":"TxValidationErrorInCardanoMode"},"tag":"TxCmdTxSubmitValidationError"},"tag":"TxSubmitFail"}
+
+==================================================
+TOTAL: 1/2 passed
+==================================================
