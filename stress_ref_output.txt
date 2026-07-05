@@ -1,0 +1,19 @@
+/home/vscode/.local/lib/python3.12/site-packages/pycardano/backend/blockfrost.py:72: UserWarning: `network` argument will be deprecated in the future. Directly passing `base_url` is recommended.
+  warnings.warn(
+Cycle  1 (mint): success=True tx=e60e51a8413d13a7c32b4970d621b6a3b9f610344eb6fa8e658bba3bc5c113b8
+Cycle  2 (pause): success=True tx=f350260d0104c8995e036faa642efdf7b2a402866cb426fa6ece2874c6b6ae37
+Cycle  3 (resume): success=True tx=5b25253087f8ff1e90101deebc62d44f59ca7f2f41c3e340b6ffafc90d0a6b4e
+Cycle  4 (mint): success=True tx=3ea33b083527e3834803ebcbec4c96c062a47699e409999c784ed2843f0a18e3
+Cycle  5 (mint): success=True tx=6d04f5e837ff46ecf2943d74147e61c113407d505008fbf2d3f5b807daf6fd47
+Cycle  6 (mint): success=True tx=43a41a05d0da4514416b4fc1341c278c6887d4b54204ef539478399bd5303e38
+Cycle  7 (mint): success=True tx=6425dd5a2ab4feba23d6956a9342525be7baa8f39e6763f0a1be15f444ef7fd4
+Cycle  8 (pause): success=True tx=49fc9d1453c18f90ed4b96856f4983ef9a0fce2e04d0c5a3f65d278c237221f5
+Cycle  9 (resume): success=True tx=291cc482417d9547c3db90f8157ca79d6dece46cb41875d1a45fb0cb061ba1ae
+Cycle 10 (mint): success=True tx=3685a1869f926096532141fd64310ca4d8042ac2de0ae7f1983a21979837c86a
+Cycle 11 (mint): success=True tx=aa0e30240f3e406fe506bd3d855089398b5e8e3bf2d32bf6c67621f839b8d8bb
+Cycle 12 (pause): success=True tx=88e69a9fb1245ccd4d6326a88e7c3c6b38e5a6b7b6c0f2b13244fd2022f06bde
+Cycle 13 (resume): success=True tx=646128bbf98b5f688e53ab3e19cb6a25f63bf95d60c8b0c13f1627a89005a813
+Cycle 14 (mint): success=True tx=8b83c30c84cd127f1fa7488661a690218a0a9771bc937cbdb47fcbd5a41bc2b9
+Cycle 15 (mint): success=True tx=078b61899755ecafeb0086a04a3bbccf45eeaba3eb97e39bacd01195d290cbec
+
+Passed: 15/15

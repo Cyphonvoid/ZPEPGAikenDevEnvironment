@@ -9,7 +9,7 @@ method on the already-constructed client instance's context, only for
 the duration of this one script.
 """
 
-from basic_client_v3 import BareClient
+from basic_client_v4 import BareClient
 from pycardano.plutus import ExecutionUnits
 
 DEPLOYMENT_JSON_PATH = "testnet_deployment.json"

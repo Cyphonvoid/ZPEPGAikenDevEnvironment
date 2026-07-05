@@ -1,0 +1,189 @@
+Pause/resume will occur at cycles: [2, 8, 12]
+All other 12 cycles will mint.
+
+
+============================================================
+CYCLE 1/15
+============================================================
+BEFORE: nonce=199 is_paused=False token_count=10
+Calling: mint()
+success=True tx=ce9f064c352d940c38367c7884ddfc287c156c06792fec191a11ee28ae312766 call_duration=26.0s
+AFTER:  nonce=200 is_paused=False token_count=11
+Master UTXO matches confirmed tx? True
+Funding set reflects change immediately? True
+Funding set stable for full 60.0s (30 polls) - expected
+
+============================================================
+CYCLE 2/15
+============================================================
+BEFORE: nonce=200 is_paused=False token_count=11
+Calling: pause()
+success=True tx=d45e9a9c5bc918f9fd6481564dbfd149032fdfa5098583f4a3f87153c2114908 call_duration=20.6s
+AFTER:  nonce=201 is_paused=True token_count=11
+Master UTXO matches confirmed tx? True
+Funding set reflects change immediately? True
+Funding set stable for full 60.0s (30 polls) - expected
+
+============================================================
+CYCLE 3/15
+============================================================
+BEFORE: nonce=201 is_paused=True token_count=11
+Calling: resume()
+success=True tx=21e0573443db8da9ea9a5edeabab110c91a5f18eb1684d8c42a4c5a96a7ee1b0 call_duration=15.7s
+AFTER:  nonce=202 is_paused=False token_count=11
+Master UTXO matches confirmed tx? True
+Funding set reflects change immediately? True
+Funding set stable for full 60.0s (30 polls) - expected
+
+============================================================
+CYCLE 4/15
+============================================================
+BEFORE: nonce=202 is_paused=False token_count=11
+Calling: mint()
+success=True tx=7771cc3a4cb9e4933f842efae013088aead276f748a735722fd2aa070671d51e call_duration=20.6s
+AFTER:  nonce=203 is_paused=False token_count=12
+Master UTXO matches confirmed tx? True
+Funding set reflects change immediately? True
+Funding set stable for full 60.0s (30 polls) - expected
+
+============================================================
+CYCLE 5/15
+============================================================
+BEFORE: nonce=203 is_paused=False token_count=12
+Calling: mint()
+success=True tx=8fa2466e137ed873791b5a24db51b1eef33cdaedc69480f8c680201e5a3a4b18 call_duration=41.1s
+AFTER:  nonce=204 is_paused=False token_count=13
+Master UTXO matches confirmed tx? True
+Funding set reflects change immediately? True
+Funding set stable for full 60.0s (30 polls) - expected
+
+============================================================
+CYCLE 6/15
+============================================================
+BEFORE: nonce=204 is_paused=False token_count=13
+Calling: mint()
+success=True tx=9cd3c9c73437b75c9b3811c0667aa933ecfcafb8afa8a1ef854bb4fed5c9c8f5 call_duration=62.4s
+AFTER:  nonce=205 is_paused=False token_count=14
+Master UTXO matches confirmed tx? True
+Funding set reflects change immediately? True
+Funding set stable for full 60.0s (30 polls) - expected
+
+============================================================
+CYCLE 7/15
+============================================================
+BEFORE: nonce=205 is_paused=False token_count=14
+Calling: mint()
+success=True tx=bdea21e8587d14a7f34505791822724621f2d71827c22a3ed42ee3d9fcdeb374 call_duration=25.8s
+AFTER:  nonce=206 is_paused=False token_count=15
+Master UTXO matches confirmed tx? True
+Funding set reflects change immediately? True
+Funding set stable for full 60.0s (30 polls) - expected
+
+============================================================
+CYCLE 8/15
+============================================================
+BEFORE: nonce=206 is_paused=False token_count=15
+Calling: pause()
+success=True tx=771afb280e33603e770bc76dc5e7341a00e049e7a669f12383e632fb4c8623e8 call_duration=20.8s
+AFTER:  nonce=207 is_paused=True token_count=15
+Master UTXO matches confirmed tx? True
+Funding set reflects change immediately? True
+Funding set stable for full 60.0s (30 polls) - expected
+
+============================================================
+CYCLE 9/15
+============================================================
+BEFORE: nonce=207 is_paused=True token_count=15
+Calling: resume()
+success=True tx=688d4faab565778bbea4f6b107acb2db3db0c8fd42c6ec72cd84ebb183e17d2d call_duration=113.0s
+AFTER:  nonce=208 is_paused=False token_count=15
+Master UTXO matches confirmed tx? True
+Funding set reflects change immediately? True
+Funding set stable for full 60.0s (30 polls) - expected
+
+============================================================
+CYCLE 10/15
+============================================================
+BEFORE: nonce=208 is_paused=False token_count=15
+Calling: mint()
+success=True tx=513b53f56968c13f30965ef21f420e8d1dcf4f4f71a868d9f715bb1f7f76193f call_duration=20.7s
+AFTER:  nonce=209 is_paused=False token_count=16
+Master UTXO matches confirmed tx? True
+Funding set reflects change immediately? True
+Funding set stable for full 60.0s (30 polls) - expected
+
+============================================================
+CYCLE 11/15
+============================================================
+BEFORE: nonce=209 is_paused=False token_count=16
+Calling: mint()
+success=True tx=266fc108807d65c2e04286c65fd85b773a32d8a68f70e65da7a795379b7cacd9 call_duration=15.6s
+AFTER:  nonce=210 is_paused=False token_count=17
+Master UTXO matches confirmed tx? True
+Funding set reflects change immediately? True
+Funding set stable for full 60.0s (30 polls) - expected
+
+============================================================
+CYCLE 12/15
+============================================================
+BEFORE: nonce=210 is_paused=False token_count=17
+Calling: pause()
+success=True tx=db20ddc412cbe1d359a10e77b35dbbffdab1bafef2fd549f5f9c3775e8342e50 call_duration=15.6s
+AFTER:  nonce=211 is_paused=True token_count=17
+Master UTXO matches confirmed tx? True
+Funding set reflects change immediately? True
+Funding set stable for full 60.0s (30 polls) - expected
+
+============================================================
+CYCLE 13/15
+============================================================
+BEFORE: nonce=211 is_paused=True token_count=17
+Calling: resume()
+success=True tx=2febb859e4e4bc069da2a830d4f70bbfb39ab5222fd8bd4d049b8be1bedce015 call_duration=15.5s
+AFTER:  nonce=212 is_paused=False token_count=17
+Master UTXO matches confirmed tx? True
+Funding set reflects change immediately? True
+Funding set stable for full 60.0s (30 polls) - expected
+
+============================================================
+CYCLE 14/15
+============================================================
+BEFORE: nonce=212 is_paused=False token_count=17
+Calling: mint()
+success=True tx=4b7ab3884a14931597e3f50efff90001b0266ccd7d027d79e3b7e20bffff450b call_duration=41.8s
+AFTER:  nonce=213 is_paused=False token_count=18
+Master UTXO matches confirmed tx? True
+Funding set reflects change immediately? True
+Funding set stable for full 60.0s (30 polls) - expected
+
+============================================================
+CYCLE 15/15
+============================================================
+BEFORE: nonce=213 is_paused=False token_count=18
+Calling: mint()
+success=True tx=8346dcada11cdc720f9397159d07bcd99aaeda6c0ce3301143cb835f9847151e call_duration=25.8s
+AFTER:  nonce=214 is_paused=False token_count=19
+Master UTXO matches confirmed tx? True
+Funding set reflects change immediately? True
+Funding set stable for full 60.0s (30 polls) - expected
+
+
+============================================================
+SUMMARY
+============================================================
+Passed: 15/15
+  Cycle 1 (mint): OK call=26.0s master_matches_tx=True funding_immediate=True unexpected_poll_change=False
+  Cycle 2 (pause): OK call=20.6s master_matches_tx=True funding_immediate=True unexpected_poll_change=False
+  Cycle 3 (resume): OK call=15.7s master_matches_tx=True funding_immediate=True unexpected_poll_change=False
+  Cycle 4 (mint): OK call=20.6s master_matches_tx=True funding_immediate=True unexpected_poll_change=False
+  Cycle 5 (mint): OK call=41.1s master_matches_tx=True funding_immediate=True unexpected_poll_change=False
+  Cycle 6 (mint): OK call=62.4s master_matches_tx=True funding_immediate=True unexpected_poll_change=False
+  Cycle 7 (mint): OK call=25.8s master_matches_tx=True funding_immediate=True unexpected_poll_change=False
+  Cycle 8 (pause): OK call=20.8s master_matches_tx=True funding_immediate=True unexpected_poll_change=False
+  Cycle 9 (resume): OK call=113.0s master_matches_tx=True funding_immediate=True unexpected_poll_change=False
+  Cycle 10 (mint): OK call=20.7s master_matches_tx=True funding_immediate=True unexpected_poll_change=False
+  Cycle 11 (mint): OK call=15.6s master_matches_tx=True funding_immediate=True unexpected_poll_change=False
+  Cycle 12 (pause): OK call=15.6s master_matches_tx=True funding_immediate=True unexpected_poll_change=False
+  Cycle 13 (resume): OK call=15.5s master_matches_tx=True funding_immediate=True unexpected_poll_change=False
+  Cycle 14 (mint): OK call=41.8s master_matches_tx=True funding_immediate=True unexpected_poll_change=False
+  Cycle 15 (mint): OK call=25.8s master_matches_tx=True funding_immediate=True unexpected_poll_change=False

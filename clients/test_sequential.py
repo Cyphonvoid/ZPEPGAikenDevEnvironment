@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from CardanoNetworkClient import CardanoNetworkClient, CardanoNet, MissingKeyError
+from CardanoNetworkClient_v5 import CardanoNetworkClient, CardanoNet, MissingKeyError
 from CardanoDeployer.cardano_types import AikenTrue, AikenFalse, NoneChainLink, SomeChainLink
 from nacl.signing import SigningKey
 
@@ -106,6 +106,13 @@ def _mint():
     )
 run("mint_document", _mint)
 
+# ── Summary ───────────────────────────────────────────────────────────────────
+
+total = passed + failed
+print(f"\n{'='*50}")
+print(f"TOTAL: {total}  PASSED: {passed}  FAILED: {failed}")
+print(f"{'='*50}")
+sys.exit(0 if failed == 0 else 1)
 # ── Write: pause ──────────────────────────────────────────────────────────────
 
 def _pause():

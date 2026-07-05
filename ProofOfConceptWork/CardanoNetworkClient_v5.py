@@ -985,6 +985,8 @@ class CardanoNetworkClient:
         self, cross_chain_global_id: bytes, sha256_hash: bytes, upload_date: bytes,
         version: int, token_data: bytes, is_unique_document: bool, valid_lower_bound: int,
     ) -> TxResult:
+
+    
         operator_key = self._require_operator()
         master = self.get_master_state()
         old_datum = master.datum

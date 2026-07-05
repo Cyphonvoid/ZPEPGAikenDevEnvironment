@@ -26,14 +26,6 @@ from pycardano import PlutusData
 
 
 # ── cardano/transaction.OutputReference ───────────────────────────────────
-# For TokenDatum (Aiken stdlib OutputReference: TransactionId = ByteArray)
-
-# For comparison with own_ref at ledger level (has TransactionId wrapper)
-@dataclass
-class TransactionId(PlutusData):
-    CONSTR_ID = 0
-    payload: bytes
-
 @dataclass
 class OutputReference(PlutusData):
     CONSTR_ID = 0
@@ -41,7 +33,6 @@ class OutputReference(PlutusData):
     output_index: int
 
 
-    
 # ── Aiken Bool ─────────────────────────────────────────────────────────────
 # VERIFIED: False = Constr 0 [], True = Constr 1 []
 @dataclass

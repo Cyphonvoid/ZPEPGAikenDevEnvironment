@@ -1,0 +1,8 @@
+/home/vscode/.local/lib/python3.12/site-packages/pycardano/backend/blockfrost.py:72: UserWarning: `network` argument will be deprecated in the future. Directly passing `base_url` is recommended.
+  warnings.warn(
+Current master state: nonce=189, is_paused=AikenFalse(), token_count=4
+
+Attempting mint() with evaluator bypassed...
+
+success=True
+tx=0dbde969eea69d0d317a1d66acced56ed7a593393d71d550ba6860d2b4926dc2

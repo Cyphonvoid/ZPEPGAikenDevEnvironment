@@ -1,0 +1,185 @@
+/home/vscode/.local/lib/python3.12/site-packages/pycardano/backend/blockfrost.py:72: UserWarning: `network` argument will be deprecated in the future. Directly passing `base_url` is recommended.
+  warnings.warn(
+
+--- Current State ---
+  utxo: fd82964b053088277ea4da99d077ec132db3c98f10bc184f17e2d78c840526fb#0
+  nonce: 262
+  is_paused: False
+  total_token_count: 46
+  total_unique_documents: 46
+  last_minted_at: 256
+  last_cross_chain_global_id: stress-ref-cycle-10-6
+  last_cardano_asset_id: 59f9c489e9fdb01101c4c4820d8d0ed465ee0878c878d8195ea642ad5a504550472d415243484956452d444f4300000100
+  policy_id: 59f9c489e9fdb01101c4c4820d8d0ed465ee0878c878d8195ea642ad
+  asset_name_prefix: ZPEPG-ARCHIVE-DOC
+  authority_key: aa3edc38bd2386f9a6bdd3bf633dea7e2045c85476a8d445f0c3fc35ffa42f6a
+  operator_key: fa2051685c04478e1d351194e3303727c087a6498d6cf4f3050d37ba76f0edc8
+  owner_key: 186855b264674f7aa1e9a8c3155493384486e0cead1c5c3453551e0f0afc6b49
+  forward_link: {'next_script_address': 'UUUUUUUUUUUUUUUUUUUUUUUUUUUU', 'next_policy_id': '66666666666666666666666666666666666666666666666666666666', 'link_reason': 'seq-test-forward', 'linked_at': 1950000000, 'instructions': '{"note": "seq test forward"}', 'nonce_at_link': 4}
+  backward_link: {'next_script_address': 'wwwwwwwwwwwwwwwwwwwwwwwwwwww', 'next_policy_id': '88888888888888888888888888888888888888888888888888888888', 'link_reason': 'seq-test-backward', 'linked_at': 1850000000, 'instructions': '{"note": "seq test backward"}', 'nonce_at_link': 10}
+
+Rotating operator key to same value: fa2051685c04478e1d351194e3303727c087a6498d6cf4f3050d37ba76f0edc8
+
+[rotate_key(operator)]
+  success:  True
+  tx_hash:  3e9587d5167594ba8da102d281f9226bd57d2885710fcf2c02abfcaecffa2a4c
+
+--- Current State ---
+  utxo: 3e9587d5167594ba8da102d281f9226bd57d2885710fcf2c02abfcaecffa2a4c#0
+  nonce: 263
+  is_paused: False
+  total_token_count: 46
+  total_unique_documents: 46
+  last_minted_at: 256
+  last_cross_chain_global_id: stress-ref-cycle-10-6
+  last_cardano_asset_id: 59f9c489e9fdb01101c4c4820d8d0ed465ee0878c878d8195ea642ad5a504550472d415243484956452d444f4300000100
+  policy_id: 59f9c489e9fdb01101c4c4820d8d0ed465ee0878c878d8195ea642ad
+  asset_name_prefix: ZPEPG-ARCHIVE-DOC
+  authority_key: aa3edc38bd2386f9a6bdd3bf633dea7e2045c85476a8d445f0c3fc35ffa42f6a
+  operator_key: fa2051685c04478e1d351194e3303727c087a6498d6cf4f3050d37ba76f0edc8
+  owner_key: 186855b264674f7aa1e9a8c3155493384486e0cead1c5c3453551e0f0afc6b49
+  forward_link: {'next_script_address': 'UUUUUUUUUUUUUUUUUUUUUUUUUUUU', 'next_policy_id': '66666666666666666666666666666666666666666666666666666666', 'link_reason': 'seq-test-forward', 'linked_at': 1950000000, 'instructions': '{"note": "seq test forward"}', 'nonce_at_link': 4}
+  backward_link: {'next_script_address': 'wwwwwwwwwwwwwwwwwwwwwwwwwwww', 'next_policy_id': '88888888888888888888888888888888888888888888888888888888', 'link_reason': 'seq-test-backward', 'linked_at': 1850000000, 'instructions': '{"note": "seq test backward"}', 'nonce_at_link': 10}
+
+
+--- Current State ---
+  utxo: 3e9587d5167594ba8da102d281f9226bd57d2885710fcf2c02abfcaecffa2a4c#0
+  nonce: 263
+  is_paused: False
+  total_token_count: 46
+  total_unique_documents: 46
+  last_minted_at: 256
+  last_cross_chain_global_id: stress-ref-cycle-10-6
+  last_cardano_asset_id: 59f9c489e9fdb01101c4c4820d8d0ed465ee0878c878d8195ea642ad5a504550472d415243484956452d444f4300000100
+  policy_id: 59f9c489e9fdb01101c4c4820d8d0ed465ee0878c878d8195ea642ad
+  asset_name_prefix: ZPEPG-ARCHIVE-DOC
+  authority_key: aa3edc38bd2386f9a6bdd3bf633dea7e2045c85476a8d445f0c3fc35ffa42f6a
+  operator_key: fa2051685c04478e1d351194e3303727c087a6498d6cf4f3050d37ba76f0edc8
+  owner_key: 186855b264674f7aa1e9a8c3155493384486e0cead1c5c3453551e0f0afc6b49
+  forward_link: {'next_script_address': 'UUUUUUUUUUUUUUUUUUUUUUUUUUUU', 'next_policy_id': '66666666666666666666666666666666666666666666666666666666', 'link_reason': 'seq-test-forward', 'linked_at': 1950000000, 'instructions': '{"note": "seq test forward"}', 'nonce_at_link': 4}
+  backward_link: {'next_script_address': 'wwwwwwwwwwwwwwwwwwwwwwwwwwww', 'next_policy_id': '88888888888888888888888888888888888888888888888888888888', 'link_reason': 'seq-test-backward', 'linked_at': 1850000000, 'instructions': '{"note": "seq test backward"}', 'nonce_at_link': 10}
+
+
+--- Funding address UTxOs BEFORE ---
+  2517cf535be7fc7c9ebbba17ab3111de60fe3eec5a1a87fc040ae477a5428711#0  2000000 lovelace
+  94d183352a09b77de984bf779e5e6bd6a818e18ec9601d74ea89bcb2a4f85190#0  2000000 lovelace
+  2a386f523e4f38a83b165cc1fbe6571fa3c226abc6ccdf8c5468f5b8594c6ff7#0  2000000 lovelace
+  568292a0921042e4d9843d03d8bfce69412bb7a090770bd2845153ff95fd25d2#1  2000000 lovelace
+  681ca8229344893e415ad9d46533c6f99f5108905d05e53cddf4341b2886db24#1  2000000 lovelace
+  681ca8229344893e415ad9d46533c6f99f5108905d05e53cddf4341b2886db24#2  3123891 lovelace
+  78786c4f089017190a725afbebdc74a4141d1b9911bf5fec1fed01f79133409a#1  2000000 lovelace
+  e942e036fbb6ce784c18f25e6b578a365d8403a811299591f86584be558b7c44#1  2000000 lovelace
+  6931cb8bdc3a43d75da58583d8c71f96214c3a63bbc2dfe531e3f6ebb975f0e7#1  2000000 lovelace
+  5b453f52ada482aa60c7546be5509ebd98d648d6e98831e0ad527bca6548cc3e#1  2000000 lovelace
+  b31739828e393646106e25784338f18dd6d8f87e53d60ddd2350c1d648369902#1  2000000 lovelace
+  04011f218d62fc5d88419872b3e07ded5aeecf9b51a9d6a7b10f629a159423ac#1  2000000 lovelace
+  ccfeacfd4f5cbbda7a1d46528645fed40cddcd08181eadc078b0b959f8ae480c#1  2000000 lovelace
+  d5ab2b6f85192e3aade75da08e6a2265e862930f306c548df464ccc1cebb23f0#1  2000000 lovelace
+  25d7eb35139b56396a33b280c63cdbe0837d0f4303a2fb7a5e4c12b8a10d5450#1  2000000 lovelace
+  febf4cf204e636bb22f322dba8bdb2dc2283d43bab619df215fced86b91e5b03#1  2000000 lovelace
+  5c09c1f6551f33c1126e19a446413c98942e04775d77126292da11777abbc08b#1  2000000 lovelace
+  de3c8eb838aa4a297dbc4e20e3e5e31c3e0e74771c8693db987bad28aa0c14a6#1  2000000 lovelace
+  992c8481d42851f05b004313928cf5d60c7c0013231a113e52231df4df22db8b#1  2000000 lovelace
+  fd82964b053088277ea4da99d077ec132db3c98f10bc184f17e2d78c840526fb#1  2000000 lovelace
+  3e9587d5167594ba8da102d281f9226bd57d2885710fcf2c02abfcaecffa2a4c#1  9457548608 lovelace
+  TOTAL: 9498672499 lovelace (9498.672499 ADA)
+
+Withdrawing 2000000 lovelace...
+
+[withdraw(2 ADA)]
+  success:  True
+  tx_hash:  ae5f4ac03b3a322c2dd6fa3aea8da7ebb3cb2f7b7e3f046c089a3d110401857e
+
+--- Funding address UTxOs AFTER ---
+  2517cf535be7fc7c9ebbba17ab3111de60fe3eec5a1a87fc040ae477a5428711#0  2000000 lovelace
+  94d183352a09b77de984bf779e5e6bd6a818e18ec9601d74ea89bcb2a4f85190#0  2000000 lovelace
+  2a386f523e4f38a83b165cc1fbe6571fa3c226abc6ccdf8c5468f5b8594c6ff7#0  2000000 lovelace
+  568292a0921042e4d9843d03d8bfce69412bb7a090770bd2845153ff95fd25d2#1  2000000 lovelace
+  681ca8229344893e415ad9d46533c6f99f5108905d05e53cddf4341b2886db24#1  2000000 lovelace
+  681ca8229344893e415ad9d46533c6f99f5108905d05e53cddf4341b2886db24#2  3123891 lovelace
+  78786c4f089017190a725afbebdc74a4141d1b9911bf5fec1fed01f79133409a#1  2000000 lovelace
+  e942e036fbb6ce784c18f25e6b578a365d8403a811299591f86584be558b7c44#1  2000000 lovelace
+  6931cb8bdc3a43d75da58583d8c71f96214c3a63bbc2dfe531e3f6ebb975f0e7#1  2000000 lovelace
+  5b453f52ada482aa60c7546be5509ebd98d648d6e98831e0ad527bca6548cc3e#1  2000000 lovelace
+  b31739828e393646106e25784338f18dd6d8f87e53d60ddd2350c1d648369902#1  2000000 lovelace
+  04011f218d62fc5d88419872b3e07ded5aeecf9b51a9d6a7b10f629a159423ac#1  2000000 lovelace
+  ccfeacfd4f5cbbda7a1d46528645fed40cddcd08181eadc078b0b959f8ae480c#1  2000000 lovelace
+  d5ab2b6f85192e3aade75da08e6a2265e862930f306c548df464ccc1cebb23f0#1  2000000 lovelace
+  25d7eb35139b56396a33b280c63cdbe0837d0f4303a2fb7a5e4c12b8a10d5450#1  2000000 lovelace
+  febf4cf204e636bb22f322dba8bdb2dc2283d43bab619df215fced86b91e5b03#1  2000000 lovelace
+  5c09c1f6551f33c1126e19a446413c98942e04775d77126292da11777abbc08b#1  2000000 lovelace
+  de3c8eb838aa4a297dbc4e20e3e5e31c3e0e74771c8693db987bad28aa0c14a6#1  2000000 lovelace
+  992c8481d42851f05b004313928cf5d60c7c0013231a113e52231df4df22db8b#1  2000000 lovelace
+  fd82964b053088277ea4da99d077ec132db3c98f10bc184f17e2d78c840526fb#1  2000000 lovelace
+  ae5f4ac03b3a322c2dd6fa3aea8da7ebb3cb2f7b7e3f046c089a3d110401857e#1  2000000 lovelace
+  ae5f4ac03b3a322c2dd6fa3aea8da7ebb3cb2f7b7e3f046c089a3d110401857e#2  9455187767 lovelace
+  TOTAL: 9498311658 lovelace (9498.311658 ADA)
+
+  Difference: 360841 lovelace (fee + any sent out)
+
+--- Owner address UTxOs AFTER (addr_test1vq2aeqdjc9m40zas6k6sa00nvqd4m9sh67c3ujjxx2vn4lg5a4mvw) ---
+  2517cf535be7fc7c9ebbba17ab3111de60fe3eec5a1a87fc040ae477a5428711#0  2000000 lovelace
+  94d183352a09b77de984bf779e5e6bd6a818e18ec9601d74ea89bcb2a4f85190#0  2000000 lovelace
+  2a386f523e4f38a83b165cc1fbe6571fa3c226abc6ccdf8c5468f5b8594c6ff7#0  2000000 lovelace
+  568292a0921042e4d9843d03d8bfce69412bb7a090770bd2845153ff95fd25d2#1  2000000 lovelace
+  681ca8229344893e415ad9d46533c6f99f5108905d05e53cddf4341b2886db24#1  2000000 lovelace
+  681ca8229344893e415ad9d46533c6f99f5108905d05e53cddf4341b2886db24#2  3123891 lovelace
+  78786c4f089017190a725afbebdc74a4141d1b9911bf5fec1fed01f79133409a#1  2000000 lovelace
+  e942e036fbb6ce784c18f25e6b578a365d8403a811299591f86584be558b7c44#1  2000000 lovelace
+  6931cb8bdc3a43d75da58583d8c71f96214c3a63bbc2dfe531e3f6ebb975f0e7#1  2000000 lovelace
+  5b453f52ada482aa60c7546be5509ebd98d648d6e98831e0ad527bca6548cc3e#1  2000000 lovelace
+  b31739828e393646106e25784338f18dd6d8f87e53d60ddd2350c1d648369902#1  2000000 lovelace
+  04011f218d62fc5d88419872b3e07ded5aeecf9b51a9d6a7b10f629a159423ac#1  2000000 lovelace
+  ccfeacfd4f5cbbda7a1d46528645fed40cddcd08181eadc078b0b959f8ae480c#1  2000000 lovelace
+  d5ab2b6f85192e3aade75da08e6a2265e862930f306c548df464ccc1cebb23f0#1  2000000 lovelace
+  25d7eb35139b56396a33b280c63cdbe0837d0f4303a2fb7a5e4c12b8a10d5450#1  2000000 lovelace
+  febf4cf204e636bb22f322dba8bdb2dc2283d43bab619df215fced86b91e5b03#1  2000000 lovelace
+  5c09c1f6551f33c1126e19a446413c98942e04775d77126292da11777abbc08b#1  2000000 lovelace
+  de3c8eb838aa4a297dbc4e20e3e5e31c3e0e74771c8693db987bad28aa0c14a6#1  2000000 lovelace
+  992c8481d42851f05b004313928cf5d60c7c0013231a113e52231df4df22db8b#1  2000000 lovelace
+  fd82964b053088277ea4da99d077ec132db3c98f10bc184f17e2d78c840526fb#1  2000000 lovelace
+  ae5f4ac03b3a322c2dd6fa3aea8da7ebb3cb2f7b7e3f046c089a3d110401857e#1  2000000 lovelace
+  ae5f4ac03b3a322c2dd6fa3aea8da7ebb3cb2f7b7e3f046c089a3d110401857e#2  9455187767 lovelace
+  TOTAL: 9498311658 lovelace (9498.311658 ADA)
+
+--- Current State ---
+  utxo: ae5f4ac03b3a322c2dd6fa3aea8da7ebb3cb2f7b7e3f046c089a3d110401857e#0
+  nonce: 264
+  is_paused: False
+  total_token_count: 46
+  total_unique_documents: 46
+  last_minted_at: 256
+  last_cross_chain_global_id: stress-ref-cycle-10-6
+  last_cardano_asset_id: 59f9c489e9fdb01101c4c4820d8d0ed465ee0878c878d8195ea642ad5a504550472d415243484956452d444f4300000100
+  policy_id: 59f9c489e9fdb01101c4c4820d8d0ed465ee0878c878d8195ea642ad
+  asset_name_prefix: ZPEPG-ARCHIVE-DOC
+  authority_key: aa3edc38bd2386f9a6bdd3bf633dea7e2045c85476a8d445f0c3fc35ffa42f6a
+  operator_key: fa2051685c04478e1d351194e3303727c087a6498d6cf4f3050d37ba76f0edc8
+  owner_key: 186855b264674f7aa1e9a8c3155493384486e0cead1c5c3453551e0f0afc6b49
+  forward_link: {'next_script_address': 'UUUUUUUUUUUUUUUUUUUUUUUUUUUU', 'next_policy_id': '66666666666666666666666666666666666666666666666666666666', 'link_reason': 'seq-test-forward', 'linked_at': 1950000000, 'instructions': '{"note": "seq test forward"}', 'nonce_at_link': 4}
+  backward_link: {'next_script_address': 'wwwwwwwwwwwwwwwwwwwwwwwwwwww', 'next_policy_id': '88888888888888888888888888888888888888888888888888888888', 'link_reason': 'seq-test-backward', 'linked_at': 1850000000, 'instructions': '{"note": "seq test backward"}', 'nonce_at_link': 10}
+
+
+--- Current State ---
+  utxo: ae5f4ac03b3a322c2dd6fa3aea8da7ebb3cb2f7b7e3f046c089a3d110401857e#0
+  nonce: 264
+  is_paused: False
+  total_token_count: 46
+  total_unique_documents: 46
+  last_minted_at: 256
+  last_cross_chain_global_id: stress-ref-cycle-10-6
+  last_cardano_asset_id: 59f9c489e9fdb01101c4c4820d8d0ed465ee0878c878d8195ea642ad5a504550472d415243484956452d444f4300000100
+  policy_id: 59f9c489e9fdb01101c4c4820d8d0ed465ee0878c878d8195ea642ad
+  asset_name_prefix: ZPEPG-ARCHIVE-DOC
+  authority_key: aa3edc38bd2386f9a6bdd3bf633dea7e2045c85476a8d445f0c3fc35ffa42f6a
+  operator_key: fa2051685c04478e1d351194e3303727c087a6498d6cf4f3050d37ba76f0edc8
+  owner_key: 186855b264674f7aa1e9a8c3155493384486e0cead1c5c3453551e0f0afc6b49
+  forward_link: {'next_script_address': 'UUUUUUUUUUUUUUUUUUUUUUUUUUUU', 'next_policy_id': '66666666666666666666666666666666666666666666666666666666', 'link_reason': 'seq-test-forward', 'linked_at': 1950000000, 'instructions': '{"note": "seq test forward"}', 'nonce_at_link': 4}
+  backward_link: {'next_script_address': 'wwwwwwwwwwwwwwwwwwwwwwwwwwww', 'next_policy_id': '88888888888888888888888888888888888888888888888888888888', 'link_reason': 'seq-test-backward', 'linked_at': 1850000000, 'instructions': '{"note": "seq test backward"}', 'nonce_at_link': 10}
+
+Writing forward link (PERMANENT - only run this once)...
+
+[link_forward()]
+  success:  False
+  tx_hash:  None
+  error:    Forward link already set. It can only be written once.
