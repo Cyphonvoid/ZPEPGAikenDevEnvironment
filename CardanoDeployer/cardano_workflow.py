@@ -57,12 +57,12 @@ try:
 
 except ImportError:
     # For local dev/test runs where the package isn't installed yet
-    from cardano_types import (
+    """from cardano_types import (
         AikenFalse, InlineStakeCredential, MasterDatum, MintBeacon,
         NoneChainLink, OutputReference, PlutusAddress, RegistryStats,
         SomeStakeCredential, VerificationKeyCredential,
     )
-    from cardano_network import NetworkBackend, NetworkError, UtxoInfo
+    from cardano_network import NetworkBackend, NetworkError, UtxoInfo"""
 
     
 # ═══════════════════════════════════════════════════════════════════════════

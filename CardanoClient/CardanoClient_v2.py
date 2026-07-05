@@ -6,6 +6,9 @@ Design principles:
     script UTXO. No script bytes are embedded in any transaction.
   - Pluggable backend: CardanoBackend protocol defines the interface. Swap
     implementations without touching client code.
+  - Network selector: pass network="preprod" or "mainnet" at construction.
+    The appropriate backend is selected automatically. Pass backend= to
+    override with a custom implementation.
   - Human-readable API: all public method signatures accept plain Python types
     (str, int, dict). Encoding to bytes, hex, CBOR happens internally.
   - Single-fetch master state: one Blockfrost call per operation, no double-fetch.
@@ -18,13 +21,13 @@ Design principles:
     timing info, and a nested receipt_json string for storage.
 
 Supported operations:
-  pause()         - Freeze all minting. Authority key required.
-  resume()        - Unfreeze minting. Authority key required.
-  mint()          - Mint a document token. Operator key required.
-  withdraw()      - Withdraw lovelace to owner address. Owner key required.
-  rotate_key()    - Rotate authority, operator, or owner key. Authority key required.
-  link_forward()  - Seal a forward link to a successor deployment. Authority key required.
-  link_backward() - Establish a backward link to a predecessor deployment. Authority key required.
+  pause()            - Freeze all minting. Authority key required.
+  resume()           - Unfreeze minting. Authority key required.
+  mint()             - Mint a document token. Operator key required.
+  withdraw()         - Withdraw lovelace to owner address. Owner key required.
+  rotate_key()       - Rotate authority, operator, or owner key. Authority key required.
+  link_forward()     - Seal a forward link to a successor deployment. Authority key required.
+  link_backward()    - Establish a backward link to a predecessor deployment. Authority key required.
   get_master_state() - Read current registry state. No keys required.
 """
 
@@ -50,23 +53,52 @@ except ImportError:
 from CardanoUtils import (
     AikenFalse, AikenTrue, DeploymentChainLink, MasterDatum,
     NoneChainLink, OutputReference, RegistryStats, SomeChainLink,
-    VerificationKeyCredential,
+    VerificationKeyCredential, TokenDatum, MintDocument, MintToken,
+    Pause, Resume, Withdraw, RotateKey, LinkForward, LinkBackward,
+    AuthorityKeyTag, OperatorKeyTag, OwnerKeyTag,
 )
-from CardanoUtils import (
-    AuthorityKeyTag, LinkBackward, LinkForward, MintDocument, MintToken,
-    OperatorKeyTag, OwnerKeyTag, Pause, Resume, TokenDatum, Withdraw,
-    RotateKey,
-)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Network config
+# ══════════════════════════════════════════════════════════════════════════════
+
+_NETWORK_CONFIG = {
+    "preprod": {
+        "pycardano_network": Network.TESTNET,
+        "base_url":          ApiUrls.preprod.value,
+        "project_id":        "preprodviqzO4lW7gcYXeQoxtAg50qneXkq00dW",
+    },
+    "mainnet": {
+        "pycardano_network": Network.MAINNET,
+        "base_url":          ApiUrls.mainnet.value,
+        "project_id":        None,  # fill in before mainnet use
+    },
+}
+
+
+def _resolve_network(network: str) -> dict:
+    if network not in _NETWORK_CONFIG:
+        raise ValueError(
+            f"Unknown network {network!r}. Choose: {list(_NETWORK_CONFIG)}"
+        )
+    cfg = _NETWORK_CONFIG[network]
+    if cfg["project_id"] is None:
+        raise ValueError(
+            f"No Blockfrost project ID configured for network {network!r}. "
+            f"Set it in _NETWORK_CONFIG before using this network."
+        )
+    return cfg
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Error type constants
 # ══════════════════════════════════════════════════════════════════════════════
 
-ERROR_INVALID_INPUT       = "invalid_input"
-ERROR_SCRIPT_REJECTED     = "script_rejected"
+ERROR_INVALID_INPUT        = "invalid_input"
+ERROR_SCRIPT_REJECTED      = "script_rejected"
 ERROR_CONFIRMATION_TIMEOUT = "confirmation_timeout"
-ERROR_NETWORK_ERROR       = "network_error"
+ERROR_NETWORK_ERROR        = "network_error"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -131,7 +163,6 @@ def _success(
 
 
 def _classify_error(e: Exception) -> str:
-    """Classify an exception into one of the four error_type constants."""
     msg = str(e).lower()
     if "400" in msg or "script" in msg or "validation" in msg or "plutus" in msg:
         return ERROR_SCRIPT_REJECTED
@@ -167,17 +198,17 @@ class CardanoBackend(Protocol):
 
 class BlockfrostBackend:
     """
-    Preprod (testnet) Blockfrost backend. Implements CardanoBackend.
-    Project ID is hardcoded — swap for a different backend class to change provider.
+    Blockfrost-backed network backend. Implements CardanoBackend.
+    Supports preprod and mainnet via the network parameter.
     """
 
-    PREPROD_PROJECT_ID = "preprodviqzO4lW7gcYXeQoxtAg50qneXkq00dW"
-
-    def __init__(self):
+    def __init__(self, network: str = "preprod"):
+        cfg = _resolve_network(network)
+        self._pycardano_network = cfg["pycardano_network"]
         self._context = BlockFrostChainContext(
-            project_id=self.PREPROD_PROJECT_ID,
-            network=Network.TESTNET,
-            base_url=ApiUrls.preprod.value,
+            project_id=cfg["project_id"],
+            network=self._pycardano_network,
+            base_url=cfg["base_url"],
         )
 
     def utxos(self, address: Address) -> list[UTxO]:
@@ -224,9 +255,8 @@ class CardanoClient:
     """
     Client for the ZPEPG archive_registry contract.
 
-    Requires a reference-type deployment JSON (produced by
-    deploy_reference_script.py). The contract script must already be
-    deployed as a reference script UTXO on-chain.
+    Requires a reference-type deployment JSON (produced by CardanoDeployer).
+    The contract script must already be deployed as a reference script UTXO.
 
     All public methods accept plain Python types and return a flat dict
     receipt following the ZPEPG client receipt pattern.
@@ -249,15 +279,44 @@ class CardanoClient:
         deployment_json_path: str,
         perm_keys_json_path: str,
         funding_signing_key_cbor: str,
+        network: str = "preprod",
         backend: Optional[CardanoBackend] = None,
     ):
+        """
+        Args:
+            deployment_json_path:     Path to deployment_ref.json.
+                                      Must have deployment_type == "reference".
+            perm_keys_json_path:      Path to perm_keys.json.
+            funding_signing_key_cbor: Raw cborHex of the funding payment key.
+            network:                  "preprod" or "mainnet". Default "preprod".
+                                      Ignored if backend= is provided.
+            backend:                  Custom backend override. If provided,
+                                      network= is ignored.
+        """
+        # ── Resolve network ──────────────────────────────────────────────
+        if backend is not None:
+            self._backend = backend
+            self._pycardano_network = Network.TESTNET  # safe default for address derivation
+        elif network == "preprod":
+            self._backend = BlockfrostBackend(network="preprod")
+            self._pycardano_network = Network.TESTNET
+        elif network == "mainnet":
+            self._backend = BlockfrostBackend(network="mainnet")
+            self._pycardano_network = Network.MAINNET
+        else:
+            raise ValueError(
+                f"Unknown network {network!r}. Choose: preprod, mainnet. "
+                f"Or pass a custom backend= instance."
+            )
+
+        # ── Load deployment ──────────────────────────────────────────────
         deployment = json.loads(Path(deployment_json_path).read_text())
 
         if deployment.get("deployment_type") != "reference":
             raise ValueError(
                 f"{deployment_json_path} is not a reference deployment "
                 f"(deployment_type={deployment.get('deployment_type')!r}). "
-                f"Run deploy_reference_script.py first."
+                f"Run CardanoDeployer first."
             )
 
         self._policy_id      = bytes.fromhex(deployment["contract"]["policy_id"])
@@ -269,18 +328,20 @@ class CardanoClient:
         self._ref_script_tx_hash  = ref["tx_hash"]
         self._ref_script_tx_index = ref["output_index"]
 
+        # ── Load permission keys ─────────────────────────────────────────
         perm_keys = json.loads(Path(perm_keys_json_path).read_text())
         self._operator_key  = bytes.fromhex(perm_keys["operator"]["private_key_hex"])
         self._authority_key = bytes.fromhex(perm_keys["authority"]["private_key_hex"])
         self._owner_key     = bytes.fromhex(perm_keys["owner"]["private_key_hex"])
 
+        # ── Load funding key ─────────────────────────────────────────────
         self._funding_key = PaymentSigningKey.from_cbor(funding_signing_key_cbor)
         self._funding_address = Address(
             payment_part=self._funding_key.to_verification_key().hash(),
-            network=Network.TESTNET,
+            network=self._pycardano_network,
         )
 
-        self._backend = backend if backend is not None else BlockfrostBackend()
+        # ── Reference script UTXO cache ──────────────────────────────────
         self._ref_utxo: Optional[UTxO] = None
 
     # ══════════════════════════════════════════════════════════════════════
@@ -398,9 +459,6 @@ class CardanoClient:
     # ══════════════════════════════════════════════════════════════════════
 
     def _confirm(self, tx_hash: str) -> tuple[bool, Optional[str], Optional[str]]:
-        """
-        Returns (confirmed, error_message, error_type).
-        """
         deadline = time.monotonic() + self.CONFIRMATION_TIMEOUT_S
         last_err = None
 
@@ -452,7 +510,7 @@ class CardanoClient:
         ), ERROR_CONFIRMATION_TIMEOUT
 
     # ══════════════════════════════════════════════════════════════════════
-    # Internal: build, sign, submit, confirm — returns receipt dict
+    # Internal: submit and confirm
     # ══════════════════════════════════════════════════════════════════════
 
     def _submit_and_confirm(
@@ -511,25 +569,19 @@ class CardanoClient:
     # ══════════════════════════════════════════════════════════════════════
 
     def pause(self) -> dict:
-        """
-        Pause the registry. Authority key required.
-        The contract rejects this if already paused.
-        """
+        """Pause the registry. Authority key required."""
         try:
             master_utxo, old_datum = self._get_master_utxo()
             ref_utxo = self._get_ref_utxo()
             nonce = old_datum.nonce
 
-            signature = self._sign_ed25519(
-                self._authority_key, self._int_to_be(nonce, 8) + b"PAUSE"
-            )
+            signature  = self._sign_ed25519(self._authority_key, self._int_to_be(nonce, 8) + b"PAUSE")
             redeemer   = Pause(nonce=nonce, signature=signature)
             new_datum  = self._carry_forward(old_datum, is_paused=AikenTrue())
             master_out = self._build_master_output(new_datum)
 
             builder = self._base_spend_builder(master_utxo, ref_utxo, redeemer)
             builder.add_output(master_out)
-
             return self._submit_and_confirm(builder, "pause", nonce)
 
         except Exception as e:
@@ -540,25 +592,19 @@ class CardanoClient:
     # ══════════════════════════════════════════════════════════════════════
 
     def resume(self) -> dict:
-        """
-        Resume the registry. Authority key required.
-        The contract rejects this if not paused.
-        """
+        """Resume the registry. Authority key required."""
         try:
             master_utxo, old_datum = self._get_master_utxo()
             ref_utxo = self._get_ref_utxo()
             nonce = old_datum.nonce
 
-            signature = self._sign_ed25519(
-                self._authority_key, self._int_to_be(nonce, 8) + b"RESUME"
-            )
+            signature  = self._sign_ed25519(self._authority_key, self._int_to_be(nonce, 8) + b"RESUME")
             redeemer   = Resume(nonce=nonce, signature=signature)
             new_datum  = self._carry_forward(old_datum, is_paused=AikenFalse())
             master_out = self._build_master_output(new_datum)
 
             builder = self._base_spend_builder(master_utxo, ref_utxo, redeemer)
             builder.add_output(master_out)
-
             return self._submit_and_confirm(builder, "resume", nonce)
 
         except Exception as e:
@@ -589,7 +635,6 @@ class CardanoClient:
             is_unique_document:    Counts as a unique document. Default True.
         """
         try:
-            # ── Validate inputs ───────────────────────────────────────────
             sha256_hash_bytes = bytes.fromhex(sha256_hash)
             if len(sha256_hash_bytes) != 32:
                 return _failure(
@@ -598,17 +643,14 @@ class CardanoClient:
                     ERROR_INVALID_INPUT,
                 )
 
-            # ── Fetch state ───────────────────────────────────────────────
             master_utxo, old_datum = self._get_master_utxo()
             ref_utxo = self._get_ref_utxo()
             nonce = old_datum.nonce
 
-            # ── Encode ────────────────────────────────────────────────────
             cross_chain_global_id_bytes = cross_chain_global_id.encode("utf-8")
             upload_date_bytes           = upload_date.encode("utf-8")
             token_data_bytes            = json.dumps(token_data, separators=(",", ":")).encode("utf-8")
 
-            # ── Sign ──────────────────────────────────────────────────────
             signed_payload = (
                 self._int_to_be(nonce, 8)
                 + cross_chain_global_id_bytes
@@ -629,14 +671,12 @@ class CardanoClient:
                 signature=signature,
             )
 
-            # ── Asset ─────────────────────────────────────────────────────
             asset_name = old_datum.asset_name_prefix + self._int_to_be(nonce, 4)
             token_id   = self._policy_id + asset_name
             token_multi_asset = MultiAsset({
                 ScriptHash(self._policy_id): Asset({AssetName(asset_name): 1})
             })
 
-            # ── New master datum ──────────────────────────────────────────
             unique_inc = 1 if is_unique_document else 0
             new_datum = self._carry_forward(
                 old_datum,
@@ -649,7 +689,6 @@ class CardanoClient:
                 ),
             )
 
-            # ── Token datum ───────────────────────────────────────────────
             token_datum = TokenDatum(
                 cardano_asset_id=token_id,
                 cross_chain_global_id=cross_chain_global_id_bytes,
@@ -681,11 +720,11 @@ class CardanoClient:
             return self._submit_and_confirm(
                 builder, "mint", nonce,
                 extra={
-                    "token_id":             token_id.hex(),
-                    "asset_name":           asset_name.hex(),
+                    "token_id":              token_id.hex(),
+                    "asset_name":            asset_name.hex(),
                     "cross_chain_global_id": cross_chain_global_id,
-                    "version":              version,
-                    "is_unique_document":   is_unique_document,
+                    "version":               version,
+                    "is_unique_document":    is_unique_document,
                 },
             )
 
@@ -726,11 +765,10 @@ class CardanoClient:
             new_datum  = self._carry_forward(old_datum)
             master_out = self._build_master_output(new_datum)
 
-            # Reconstruct owner address from datum
             pay_cred   = old_datum.owner_address.payment_credential
             owner_addr = Address(
                 payment_part=VerificationKeyHash(pay_cred.credential_hash),
-                network=Network.TESTNET,
+                network=self._pycardano_network,
             )
             owner_out = TransactionOutput(address=owner_addr, amount=amount_lovelace)
 
@@ -793,14 +831,10 @@ class CardanoClient:
             ref_utxo = self._get_ref_utxo()
             nonce = old_datum.nonce
 
-            signed_payload = (
-                self._int_to_be(nonce, 8) + b"ROTATE" + key_type_str + new_key
-            )
+            signed_payload = self._int_to_be(nonce, 8) + b"ROTATE" + key_type_str + new_key
             signature = self._sign_ed25519(self._authority_key, signed_payload)
 
-            redeemer = RotateKey(
-                nonce=nonce, key_type=key_tag, new_key=new_key, signature=signature
-            )
+            redeemer = RotateKey(nonce=nonce, key_type=key_tag, new_key=new_key, signature=signature)
 
             if key_type_lower == "authority":
                 new_datum = self._carry_forward(old_datum, authority_key=new_key)
@@ -816,10 +850,7 @@ class CardanoClient:
 
             return self._submit_and_confirm(
                 builder, "rotate_key", nonce,
-                extra={
-                    "key_type":     key_type_lower,
-                    "new_key_hex":  new_public_key_hex,
-                },
+                extra={"key_type": key_type_lower, "new_key_hex": new_public_key_hex},
             )
 
         except Exception as e:
@@ -840,13 +871,6 @@ class CardanoClient:
         """
         Seal a permanent forward link to a successor deployment. Authority key required.
         The contract rejects this if the forward link slot is already set.
-
-        Args:
-            next_script_address: Bech32 address of the successor script.
-            next_policy_id:      Hex string of the successor policy ID.
-            link_reason:         Human-readable reason for the migration.
-            linked_at:           Timestamp or epoch integer recorded in the link.
-            instructions:        Human-readable migration instructions.
         """
         try:
             master_utxo, old_datum = self._get_master_utxo()
@@ -920,13 +944,6 @@ class CardanoClient:
         """
         Establish a permanent backward link to a predecessor deployment. Authority key required.
         The contract rejects this if the backward link slot is already set.
-
-        Args:
-            prev_script_address: Bech32 address of the predecessor script.
-            prev_policy_id:      Hex string of the predecessor policy ID.
-            link_reason:         Human-readable reason for the linkage.
-            linked_at:           Timestamp or epoch integer recorded in the link.
-            instructions:        Human-readable notes about the predecessor.
         """
         try:
             master_utxo, old_datum = self._get_master_utxo()
@@ -990,10 +1007,7 @@ class CardanoClient:
     # ══════════════════════════════════════════════════════════════════════
 
     def get_master_state(self) -> dict:
-        """
-        Read the current master registry state. No keys required.
-        Returns a plain dict. Safe to call at any time.
-        """
+        """Read current registry state. No keys required."""
         utxo, datum = self._get_master_utxo()
 
         def _link_to_dict(link) -> Optional[dict]:
