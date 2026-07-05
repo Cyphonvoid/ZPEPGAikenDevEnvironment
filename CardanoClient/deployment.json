@@ -1,12 +1,12 @@
 {
   "network": "preprod",
   "deployed_from_wallet_address": "addr_test1vq2aeqdjc9m40zas6k6sa00nvqd4m9sh67c3ujjxx2vn4lg5a4mvw",
-  "transaction_hash": "2843bb94d0e7b42286d7a9c8076ef2893ae80a15b15fa1d37587b01b22216783",
-  "genesis_transaction_hash": "681ca8229344893e415ad9d46533c6f99f5108905d05e53cddf4341b2886db24",
-  "genesis_output_index": 2,
+  "transaction_hash": "47896ad26a5288c926a7d0d94f11399a6751952b525847812c8675c3dc63319c",
+  "genesis_transaction_hash": "6931cb8bdc3a43d75da58583d8c71f96214c3a63bbc2dfe531e3f6ebb975f0e7",
+  "genesis_output_index": 1,
   "contract": {
-    "policy_id": "d29e63a609a207350a1a24b3fcd507099b846936647de3ba889fcb12",
-    "script_address": "addr_test1wrffucaxpx3qwdg2rgjt8lx4quyehprfxej8mca63z0ukys38se9v",
+    "policy_id": "88bbdf42f8e513d507b2626840d5d08a5537343b690cfe90cfd9405d",
+    "script_address": "addr_test1wzythh6zlrj384g8kf3xssx46z992de58d5sel5selv5qhgc6y8uj",
     "bootstrap_generated_plutus_path": "bootstrap_generated_plutus.json"
   },
   "beacon": {

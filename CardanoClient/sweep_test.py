@@ -19,7 +19,7 @@ import json
 import time
 from CardanoClient import CardanoClient
 
-DEPLOYMENT  = "deployment_ref_2026-07-05_09-33-37.json"
+DEPLOYMENT  = "deployment_ref_2026-07-05_11-01-02.json"
 PERM_KEYS   = "perm_keys.json"
 FUNDING_KEY = "58200e0d160a055b49f5f0b3f3de26b87ebf51cde2ce3036b9fffe4acdc7a805d71e"
 
@@ -114,7 +114,7 @@ current_operator_vk = perm_keys["operator"]["public_key_hex"]
 # ════════════════════════════════════════════════════════════════════════
 
 section("2. pause()")
-r = client.pause()
+r = client.pause_minting()
 print_receipt(r)
 check("pause — success", r, expect_success=True, checks={"operation": "pause"})
 
@@ -123,7 +123,7 @@ check("pause — success", r, expect_success=True, checks={"operation": "pause"}
 # ════════════════════════════════════════════════════════════════════════
 
 section("3. resume()")
-r = client.resume()
+r = client.resume_minting()
 print_receipt(r)
 check("resume — success", r, expect_success=True, checks={"operation": "resume"})
 
@@ -132,18 +132,18 @@ check("resume — success", r, expect_success=True, checks={"operation": "resume
 # ════════════════════════════════════════════════════════════════════════
 
 section("4. pause() then pause() again — second should fail")
-r1 = client.pause()
+r1 = client.pause_minting()
 print_receipt(r1)
 check("double-pause first — success", r1, expect_success=True)
 
-r2 = client.pause()
+r2 = client.pause_minting()
 print_receipt(r2)
 check("double-pause second — contract rejects", r2, expect_success=False,
       checks={"operation": "pause"})
 
 # Resume so we can continue
 section("4b. resume() to restore state")
-r = client.resume()
+r = client.resume_minting()
 print_receipt(r)
 check("resume after double-pause — success", r, expect_success=True)
 
@@ -152,7 +152,7 @@ check("resume after double-pause — success", r, expect_success=True)
 # ════════════════════════════════════════════════════════════════════════
 
 section("5. mint()")
-r = client.mint(
+r = client.create_document_token(
     cross_chain_global_id="sweep-test-mint-001",
     sha256_hash="ab" * 32,
     upload_date="2026-07-05T00:00:00Z",
@@ -173,7 +173,7 @@ check("mint — success", r, expect_success=True, checks={
 # ════════════════════════════════════════════════════════════════════════
 
 section("6. mint() with invalid sha256_hash — should fail with invalid_input")
-r = client.mint(
+r = client.create_document_token(
     cross_chain_global_id="sweep-test-bad-hash",
     sha256_hash="abcd",  # too short
     upload_date="2026-07-05T00:00:00Z",
@@ -189,8 +189,8 @@ check("mint invalid sha256 — invalid_input", r, expect_success=False,
 # ════════════════════════════════════════════════════════════════════════
 
 section("7. mint() while paused — contract rejects")
-client.pause()
-r = client.mint(
+client.pause_minting()
+r = client.create_document_token(
     cross_chain_global_id="sweep-test-paused-mint",
     sha256_hash="cd" * 32,
     upload_date="2026-07-05T00:00:00Z",
@@ -199,8 +199,8 @@ r = client.mint(
 )
 print_receipt(r)
 check("mint while paused — script_rejected", r, expect_success=False,
-      checks={"operation": "mint"})
-client.resume()
+      checks={"operation": "mint", "error_type": "script_rejected"})
+client.resume_minting()
 
 # ════════════════════════════════════════════════════════════════════════
 # 8. withdraw
@@ -229,10 +229,10 @@ check("withdraw 0 — invalid_input", r, expect_success=False,
 # ════════════════════════════════════════════════════════════════════════
 
 section("10. rotate_key() — rotate operator to same value")
-r = client.rotate_key(key_type="operator", new_public_key_hex=current_operator_vk)
+r = client.update_key(key_type="operator", new_public_key_hex=current_operator_vk)
 print_receipt(r)
-check("rotate_key operator — success", r, expect_success=True, checks={
-    "operation": "rotate_key",
+check("update_key operator — success", r, expect_success=True, checks={
+    "operation": "update_key",
     "key_type": "operator",
     "new_key_hex": current_operator_vk,
 })
@@ -242,10 +242,10 @@ check("rotate_key operator — success", r, expect_success=True, checks={
 # ════════════════════════════════════════════════════════════════════════
 
 section("11. rotate_key() with invalid key — should fail with invalid_input")
-r = client.rotate_key(key_type="operator", new_public_key_hex="abcd")
+r = client.update_key(key_type="operator", new_public_key_hex="abcd")
 print_receipt(r)
-check("rotate_key bad key — invalid_input", r, expect_success=False,
-      checks={"operation": "rotate_key", "error_type": "invalid_input"})
+check("update_key bad key — invalid_input", r, expect_success=False,
+      checks={"operation": "update_key", "error_type": "invalid_input"})
 
 
 

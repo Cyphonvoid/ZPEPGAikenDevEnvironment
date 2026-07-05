@@ -84,7 +84,7 @@ BEACON_ASSET_NAME          = b"ZPEPG-BEACON"
 REGISTRY_ASSET_NAME_PREFIX = b"ZPEPG-ARCHIVE-DOC"
 
 MASTER_UTXO_FLOOR_LOVELACE  = 3_000_000
-REF_SCRIPT_UTXO_LOVELACE    = 70_000_000   # ~32.6 ADA minimum for 7KB script
+REF_SCRIPT_UTXO_LOVELACE    = 30_000_000   # ~32.6 ADA minimum for 7KB script
 COLLATERAL_MIN_LOVELACE     = 5_000_000
 TTL_BUFFER_SLOTS            = 500
 
@@ -482,17 +482,21 @@ class CardanoDeployer:
         script_address_str: str,
         output_json_path: Optional[str] = None,
         base_deployment: Optional[dict] = None,
+        ref_script_lovelace: int = REF_SCRIPT_UTXO_LOVELACE,
     ) -> dict:
         """
         Post the compiled script as a reference script UTXO at the script address.
 
         Args:
-            blueprint_path:     Path to the parameterized blueprint JSON.
-            script_address_str: Bech32 script address string.
-            output_json_path:   Where to write the ref deployment JSON.
-                                Defaults to deployment_ref_<timestamp>.json.
-            base_deployment:    Existing deployment dict to extend.
-                                If None, only the reference_script fields are written.
+            blueprint_path:      Path to the parameterized blueprint JSON.
+            script_address_str:  Bech32 script address string.
+            output_json_path:    Where to write the ref deployment JSON.
+                                 Defaults to deployment_ref_<timestamp>.json.
+            base_deployment:     Existing deployment dict to extend.
+                                 If None, only the reference_script fields are written.
+            ref_script_lovelace: Lovelace to lock in the reference script UTXO.
+                                 Defaults to REF_SCRIPT_UTXO_LOVELACE constant.
+                                 Must be >= ledger minimum for the script size.
 
         Returns:
             Result dict with success, tx_hash, reference_script coords,
@@ -508,10 +512,11 @@ class CardanoDeployer:
 
             print(f"  Script address:  {script_address}")
             print(f"  Blueprint:       {blueprint_path}")
+            print(f"  Ref script ADA:  {ref_script_lovelace / 1_000_000:.2f} ADA")
 
             ref_output = TransactionOutput(
                 address=script_address,
-                amount=REF_SCRIPT_UTXO_LOVELACE,
+                amount=ref_script_lovelace,
                 script=script,
                 post_alonzo=True,
             )
@@ -580,12 +585,19 @@ class CardanoDeployer:
         genesis_utxo_ref: Optional[str] = None,
         output_blueprint_path: str = "bootstrap_generated_plutus.json",
         deployment_json_path: str = "deployment.json",
+        ref_script_lovelace: int = REF_SCRIPT_UTXO_LOVELACE,
     ) -> dict:
         """
         Full deployment pipeline: genesis + reference script.
 
         Runs deploy_genesis() then deploy_contract_script() in sequence.
         Produces deployment.json and deployment_ref_<timestamp>.json.
+
+        Args:
+            genesis_utxo_ref:      UTXO ref to use as genesis input.
+            output_blueprint_path: Where to write the parameterized blueprint.
+            deployment_json_path:  Where to write deployment.json.
+            ref_script_lovelace:   Lovelace to lock in the reference script UTXO.
 
         Returns a combined result dict.
         """
@@ -611,6 +623,7 @@ class CardanoDeployer:
             blueprint_path=genesis_result["output_blueprint_path"],
             script_address_str=genesis_result["script_address"],
             base_deployment=base_deployment,
+            ref_script_lovelace=ref_script_lovelace,
         )
 
         if not ref_result["success"]:
@@ -636,6 +649,140 @@ class CardanoDeployer:
         }
 
 
+    def preflight_check(self, blueprint_path: Optional[str] = None) -> dict:
+        """
+        Check wallet readiness before deployment. Verifies:
+        - Wallet has plain-ADA UTxOs suitable for genesis input
+        - Wallet has enough total ADA for genesis + reference script
+        - REF_SCRIPT_UTXO_LOVELACE constant is sufficient for script size
+        - Script size is within reasonable bounds (if blueprint provided)
+
+        Args:
+            blueprint_path: Path to compiled plutus.json. If provided, calculates
+                            exact min-lovelace for the reference script UTXO from
+                            script size. If None, uses REF_SCRIPT_UTXO_LOVELACE.
+
+        Returns:
+            dict with ready bool, balances, estimates, and issues list.
+        """
+        issues = []
+
+        try:
+            utxos = self._context.utxos(self._funding_address)
+        except Exception as e:
+            return {
+                "ready": False,
+                "funding_address": str(self._funding_address),
+                "issues": [f"Failed to fetch UTxOs: {e}"],
+            }
+
+        total_lovelace         = sum(u.output.amount.coin for u in utxos)
+        plain_utxos            = [u for u in utxos if not u.output.amount.multi_asset]
+        token_utxos            = [u for u in utxos if u.output.amount.multi_asset]
+        plain_over_5ada        = [u for u in plain_utxos if u.output.amount.coin > 5_000_000]
+        total_ada              = total_lovelace / 1_000_000
+        plain_utxo_count       = len(plain_utxos)
+        token_utxo_count       = len(token_utxos)
+        largest_plain_lovelace = max((u.output.amount.coin for u in plain_utxos), default=0)
+        largest_plain_ada      = largest_plain_lovelace / 1_000_000
+
+        # ── Estimate ref script min-lovelace from script size ─────────────
+        ref_script_min_lovelace = REF_SCRIPT_UTXO_LOVELACE
+        ref_script_min_ada      = ref_script_min_lovelace / 1_000_000
+        script_size_bytes       = None
+
+        if blueprint_path and Path(blueprint_path).exists():
+            try:
+                bp = json.loads(Path(blueprint_path).read_text())
+                spend_v = next(
+                    (v for v in bp.get("validators", []) if v["title"].endswith(".spend")),
+                    None,
+                )
+                if spend_v:
+                    script_size_bytes = len(bytes.fromhex(spend_v["compiledCode"]))
+                    try:
+                        coins_per_byte = self._context.protocol_param.coins_per_utxo_word or 4310
+                    except Exception:
+                        coins_per_byte = 4310
+                    # Overhead for UTXO structure (~160 bytes) + 10% safety buffer
+                    ref_script_min_lovelace = int(coins_per_byte * (script_size_bytes + 160) * 1.10)
+                    ref_script_min_ada = ref_script_min_lovelace / 1_000_000
+
+                    # ── Key check: is the constant sufficient? ────────────
+                    if ref_script_min_lovelace > REF_SCRIPT_UTXO_LOVELACE:
+                        safe_constant = int(ref_script_min_lovelace * 1.05 // 1_000_000 + 1) * 1_000_000
+                        issues.append(
+                            f"REF_SCRIPT_UTXO_LOVELACE constant "
+                            f"({REF_SCRIPT_UTXO_LOVELACE / 1_000_000:.2f} ADA) is below the "
+                            f"calculated script minimum ({ref_script_min_ada:.2f} ADA) for a "
+                            f"{script_size_bytes}-byte script. "
+                            f"Increase REF_SCRIPT_UTXO_LOVELACE to at least "
+                            f"{safe_constant} lovelace ({safe_constant / 1_000_000:.2f} ADA) "
+                            f"before deploying."
+                        )
+            except Exception as e:
+                issues.append(f"Could not calculate script size from blueprint: {e}")
+
+        # ── Cost estimates ────────────────────────────────────────────────
+        genesis_fee_estimate_ada    = 0.5
+        master_utxo_min_ada         = MASTER_UTXO_FLOOR_LOVELACE / 1_000_000
+        total_genesis_needed_ada    = genesis_fee_estimate_ada + master_utxo_min_ada
+        total_ref_script_needed_ada = ref_script_min_ada + 0.5
+        total_needed_ada            = total_genesis_needed_ada + total_ref_script_needed_ada
+
+        # ── Wallet checks ─────────────────────────────────────────────────
+        has_genesis_utxo   = len(plain_over_5ada) > 0
+        has_enough_genesis = total_ada >= total_genesis_needed_ada
+        has_enough_ref     = total_ada >= total_ref_script_needed_ada
+        has_enough_total   = total_ada >= total_needed_ada
+
+        if not has_genesis_utxo:
+            if plain_utxo_count == 0:
+                issues.append(
+                    "No plain-ADA UTxOs found. All UTxOs carry native tokens. "
+                    "Send at least 5 ADA in a token-free UTxO to this address."
+                )
+            else:
+                issues.append(
+                    f"No plain-ADA UTxO over 5 ADA found "
+                    f"(largest: {largest_plain_ada:.6f} ADA). "
+                    f"Fund with at least a 5 ADA token-free UTxO."
+                )
+
+        if not has_enough_total:
+            issues.append(
+                f"Insufficient total ADA. Have {total_ada:.6f} ADA, "
+                f"need ~{total_needed_ada:.2f} ADA for full deployment "
+                f"(genesis ~{total_genesis_needed_ada:.2f} ADA + "
+                f"reference script ~{total_ref_script_needed_ada:.2f} ADA)."
+            )
+        elif not has_enough_ref:
+            issues.append(
+                f"Enough ADA for genesis but not for reference script. "
+                f"Reference script needs ~{total_ref_script_needed_ada:.2f} ADA "
+                f"(script min-lovelace: {ref_script_min_ada:.2f} ADA)."
+            )
+
+        return {
+            "ready":                        len(issues) == 0,
+            "funding_address":              str(self._funding_address),
+            "total_ada":                    round(total_ada, 6),
+            "total_utxos":                  len(utxos),
+            "plain_ada_utxos":              plain_utxo_count,
+            "token_utxos":                  token_utxo_count,
+            "plain_utxos_over_5_ada":       len(plain_over_5ada),
+            "largest_plain_utxo_ada":       round(largest_plain_ada, 6),
+            "script_size_bytes":            script_size_bytes,
+            "estimated_genesis_cost_ada":   round(total_genesis_needed_ada, 2),
+            "estimated_ref_script_min_ada": round(ref_script_min_ada, 2),
+            "estimated_total_needed_ada":   round(total_needed_ada, 2),
+            "ref_script_constant_ada":      round(REF_SCRIPT_UTXO_LOVELACE / 1_000_000, 2),
+            "has_enough_for_genesis":       has_enough_genesis,
+            "has_enough_for_ref_script":    has_enough_ref,
+            "has_enough_total":             has_enough_total,
+            "has_suitable_genesis_utxo":    has_genesis_utxo,
+            "issues":                       issues,
+        }
 # ══════════════════════════════════════════════════════════════════════════════
 # CLI
 # ══════════════════════════════════════════════════════════════════════════════
@@ -697,6 +844,45 @@ def _pick_utxo_interactive(utxos: list[dict]) -> Optional[dict]:
             print("Enter a number.")
 
 
+def _prompt_ref_script_ada(preflight: dict) -> int:
+    """
+    Prompt user to confirm or override the reference script UTXO ADA amount.
+    Shows the calculated minimum and the current default, lets the user
+    enter a custom value or press Enter to use the default.
+    Returns the chosen amount in lovelace.
+    """
+    calculated_min = preflight.get("estimated_ref_script_min_ada", REF_SCRIPT_UTXO_LOVELACE / 1_000_000)
+    current_default = REF_SCRIPT_UTXO_LOVELACE / 1_000_000
+
+    print(f"\n--- Reference Script UTXO Amount ---")
+    print(f"  Calculated minimum:  {calculated_min:.2f} ADA")
+    print(f"  Default configured:  {current_default:.2f} ADA")
+    print(f"  (Press Enter to use default, or type a custom ADA amount)")
+
+    while True:
+        raw = input(f"\n  ADA amount [{current_default:.2f}]: ").strip()
+        if not raw:
+            chosen_lovelace = REF_SCRIPT_UTXO_LOVELACE
+            print(f"  Using default: {current_default:.2f} ADA ({chosen_lovelace} lovelace).")
+            return chosen_lovelace
+        try:
+            chosen_ada = float(raw)
+            if chosen_ada <= 0:
+                print("  Amount must be positive.")
+                continue
+            chosen_lovelace = int(chosen_ada * 1_000_000)
+            if chosen_ada < calculated_min:
+                print(f"  Warning: {chosen_ada:.2f} ADA is below the calculated minimum of {calculated_min:.2f} ADA.")
+                print(f"  The transaction will likely be rejected by the node.")
+                confirm = input("  Proceed with this amount anyway? [y/N]: ").strip().lower()
+                if confirm != "y":
+                    continue
+            print(f"  Using: {chosen_ada:.2f} ADA ({chosen_lovelace} lovelace).")
+            return chosen_lovelace
+        except ValueError:
+            print("  Enter a valid number (e.g. 75 or 72.5).")
+
+
 def main(argv=None) -> int:
     parser = _build_parser()
     args   = parser.parse_args(argv)
@@ -737,6 +923,9 @@ def main(argv=None) -> int:
         print(f"  Script address:      {script_address}")
         print(f"  Output:              {output_json_path}")
 
+        preflight = deployer.preflight_check(blueprint_path=blueprint_path)
+        ref_lovelace = _prompt_ref_script_ada(preflight)
+
         confirm = input("\nProceed? [y/N]: ").strip().lower()
         if confirm != "y":
             print("Aborted.")
@@ -747,6 +936,7 @@ def main(argv=None) -> int:
             script_address_str=script_address,
             output_json_path=output_json_path,
             base_deployment=base,
+            ref_script_lovelace=ref_lovelace,
         )
 
         if result["success"]:
@@ -779,7 +969,39 @@ def main(argv=None) -> int:
     print(f"  Source blueprint: {args.source_blueprint}")
     print(f"  Mode:             {'genesis only' if args.genesis_only else 'full (genesis + reference script)'}")
 
-    confirm = input("\nProceed? [y/N]: ").strip().lower()
+    # ── Preflight check ──────────────────────────────────────────────────
+    print("\n--- Preflight Check ---")
+    preflight = deployer.preflight_check(blueprint_path=args.source_blueprint)
+    print(f"  Total ADA:                 {preflight['total_ada']:.6f}")
+    print(f"  Plain UTxOs:               {preflight['plain_ada_utxos']} ({preflight['plain_utxos_over_5_ada']} over 5 ADA)")
+    print(f"  Token UTxOs:               {preflight['token_utxos']}")
+    print(f"  Largest plain UTxO:        {preflight['largest_plain_utxo_ada']:.6f} ADA")
+    print(f"  Script size:               {preflight.get('script_size_bytes', 'N/A')} bytes")
+    print(f"  Est. ref script min:       ~{preflight['estimated_ref_script_min_ada']:.2f} ADA")
+    print(f"  Current constant:          {preflight['ref_script_constant_ada']:.2f} ADA")
+    print(f"  Est. total needed:         ~{preflight['estimated_total_needed_ada']:.2f} ADA")
+    print(f"  Has suitable genesis UTxO: {preflight['has_suitable_genesis_utxo']}")
+    print(f"  Has enough ADA (total):    {preflight['has_enough_total']}")
+
+    if preflight["issues"]:
+        print("\n  ISSUES DETECTED:")
+        for issue in preflight["issues"]:
+            print(f"    x {issue}")
+        if not preflight["ready"]:
+            print("\nPreflight failed. Fix issues above before deploying.")
+            confirm_anyway = input("Proceed anyway? [y/N]: ").strip().lower()
+            if confirm_anyway != "y":
+                print("Aborted.")
+                return 0
+    else:
+        print("  Status: READY")
+
+    # ── Ref script ADA prompt (skip for genesis-only) ────────────────────
+    ref_lovelace = REF_SCRIPT_UTXO_LOVELACE
+    if not args.genesis_only:
+        ref_lovelace = _prompt_ref_script_ada(preflight)
+
+    confirm = input("\nProceed with deployment? [y/N]: ").strip().lower()
     if confirm != "y":
         print("Aborted.")
         return 0
@@ -804,6 +1026,7 @@ def main(argv=None) -> int:
             genesis_utxo_ref=genesis_ref,
             output_blueprint_path=args.output_blueprint,
             deployment_json_path=args.deployment_json,
+            ref_script_lovelace=ref_lovelace,
         )
         if result["success"]:
             print(f"\n=== Full Deployment Complete ===")

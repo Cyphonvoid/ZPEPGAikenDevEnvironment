@@ -576,7 +576,7 @@ class CardanoClient:
     # Public: pause
     # ══════════════════════════════════════════════════════════════════════
 
-    def pause(self) -> dict:
+    def pause_minting(self) -> dict:
         """Pause the registry. Authority key required."""
         try:
             master_utxo, old_datum = self._get_master_utxo()
@@ -599,7 +599,7 @@ class CardanoClient:
     # Public: resume
     # ══════════════════════════════════════════════════════════════════════
 
-    def resume(self) -> dict:
+    def resume_minting(self) -> dict:
         """Resume the registry. Authority key required."""
         try:
             master_utxo, old_datum = self._get_master_utxo()
@@ -622,7 +622,7 @@ class CardanoClient:
     # Public: mint
     # ══════════════════════════════════════════════════════════════════════
 
-    def mint(
+    def create_document_token(
         self,
         cross_chain_global_id: str,
         sha256_hash: str,
@@ -646,7 +646,7 @@ class CardanoClient:
             sha256_hash_bytes = bytes.fromhex(sha256_hash)
             if len(sha256_hash_bytes) != 32:
                 return _failure(
-                    "mint",
+                    "create_document_token(mint)",
                     f"sha256_hash must be 32 bytes (64 hex chars), got {len(sha256_hash_bytes)}.",
                     ERROR_INVALID_INPUT,
                 )
@@ -797,10 +797,10 @@ class CardanoClient:
             return _failure("withdraw", str(e), _classify_error(e))
 
     # ══════════════════════════════════════════════════════════════════════
-    # Public: rotate_key
+    # Public: update_key
     # ══════════════════════════════════════════════════════════════════════
 
-    def rotate_key(
+    def update_key(
         self,
         key_type: Literal["authority", "operator", "owner"],
         new_public_key_hex: str,
@@ -816,7 +816,7 @@ class CardanoClient:
             new_key = bytes.fromhex(new_public_key_hex)
             if len(new_key) != 32:
                 return _failure(
-                    "rotate_key",
+                    "update_key",
                     f"new_public_key_hex must be 32 bytes (64 hex chars), got {len(new_key)}.",
                     ERROR_INVALID_INPUT,
                 )
@@ -830,7 +830,7 @@ class CardanoClient:
                 key_tag, key_type_str = OwnerKeyTag(), b"OWNER"
             else:
                 return _failure(
-                    "rotate_key",
+                    "update_key",
                     f"key_type must be 'authority', 'operator', or 'owner', got {key_type!r}.",
                     ERROR_INVALID_INPUT,
                 )
@@ -839,7 +839,7 @@ class CardanoClient:
             ref_utxo = self._get_ref_utxo()
             nonce = old_datum.nonce
 
-            signed_payload = self._int_to_be(nonce, 8) + b"ROTATE" + key_type_str + new_key
+            signed_payload = self._int_to_be(nonce, 8) + b"UPDATE" + key_type_str + new_key
             signature = self._sign_ed25519(self._authority_key, signed_payload)
 
             redeemer = RotateKey(nonce=nonce, key_type=key_tag, new_key=new_key, signature=signature)
@@ -857,12 +857,12 @@ class CardanoClient:
             builder.add_output(master_out)
 
             return self._submit_and_confirm(
-                builder, "rotate_key", nonce,
+                builder, "update_key", nonce,
                 extra={"key_type": key_type_lower, "new_key_hex": new_public_key_hex},
             )
 
         except Exception as e:
-            return _failure("rotate_key", str(e), _classify_error(e))
+            return _failure("update_key", str(e), _classify_error(e))
 
     # ══════════════════════════════════════════════════════════════════════
     # Public: link_forward
@@ -1070,6 +1070,7 @@ class CardanoClient:
             "lovelace":               u.output.amount.coin,
         }
 
+
     def _iter_token_utxos(self):
         """
         Generator yielding (UTxO, TokenDatum) for every token UTXO at the
@@ -1105,7 +1106,7 @@ class CardanoClient:
     # Public: get_token
     # ══════════════════════════════════════════════════════════════════════
 
-    def get_token(self, cross_chain_global_id: str) -> Optional[dict]:
+    def get_token_global_id(self, cross_chain_global_id: str) -> Optional[dict]:
         """
         Find a document token by its cross_chain_global_id.
 

@@ -19,7 +19,7 @@ import json
 import time
 from CardanoClient import CardanoClient
 
-DEPLOYMENT  = "deployment_ref_2026-07-05_08-46-17.json"
+DEPLOYMENT  = "deployment_ref_2026-07-05_11-01-02.json"
 PERM_KEYS   = "perm_keys.json"
 FUNDING_KEY = "58200e0d160a055b49f5f0b3f3de26b87ebf51cde2ce3036b9fffe4acdc7a805d71e"
 
@@ -114,7 +114,7 @@ current_operator_vk = perm_keys["operator"]["public_key_hex"]
 # ════════════════════════════════════════════════════════════════════════
 
 section("2. pause()")
-r = client.pause()
+r = client.pause_minting()
 print_receipt(r)
 check("pause — success", r, expect_success=True, checks={"operation": "pause"})
 
@@ -123,7 +123,7 @@ check("pause — success", r, expect_success=True, checks={"operation": "pause"}
 # ════════════════════════════════════════════════════════════════════════
 
 section("3. resume()")
-r = client.resume()
+r = client.resume_minting()
 print_receipt(r)
 check("resume — success", r, expect_success=True, checks={"operation": "resume"})
 
