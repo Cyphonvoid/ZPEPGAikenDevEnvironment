@@ -1,0 +1,14 @@
+{
+    "authority": {
+        "private_key_hex": "0d0279eb5d436e07f961c384c8999369b36c68da6288635af490486b0260ed71",
+        "public_key_hex": "aa3edc38bd2386f9a6bdd3bf633dea7e2045c85476a8d445f0c3fc35ffa42f6a"
+    },
+    "operator": {
+        "private_key_hex": "1a0d578b62349a4b6cee2aae3fb32697bb2e2ae56c8b5a0ab8ca5ae56fa25d48",
+        "public_key_hex": "fa2051685c04478e1d351194e3303727c087a6498d6cf4f3050d37ba76f0edc8"
+    },
+    "owner": {
+        "private_key_hex": "6e994bf3dcc11a13226962c25850da0db1407a625177ef8ebfa3c0655e334689",
+        "public_key_hex": "186855b264674f7aa1e9a8c3155493384486e0cead1c5c3453551e0f0afc6b49"
+    }
+}

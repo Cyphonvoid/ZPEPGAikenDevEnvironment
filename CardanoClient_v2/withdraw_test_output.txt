@@ -1,0 +1,154 @@
+/home/vscode/.local/lib/python3.12/site-packages/pycardano/backend/blockfrost.py:72: UserWarning: `network` argument will be deprecated in the future. Directly passing `base_url` is recommended.
+  warnings.warn(
+============================================================
+STEP 1: Initial State
+============================================================
+
+--- Funding Wallet UTxOs BEFORE ---
+  2517cf535be7fc7c9ebbba17ab3111de60fe3eec5a1a87fc040ae477a5428711#0  2.000000 ADA + tokens
+  94d183352a09b77de984bf779e5e6bd6a818e18ec9601d74ea89bcb2a4f85190#0  2.000000 ADA + tokens
+  2a386f523e4f38a83b165cc1fbe6571fa3c226abc6ccdf8c5468f5b8594c6ff7#0  2.000000 ADA + tokens
+  5b453f52ada482aa60c7546be5509ebd98d648d6e98831e0ad527bca6548cc3e#1  2.000000 ADA
+  b31739828e393646106e25784338f18dd6d8f87e53d60ddd2350c1d648369902#1  2.000000 ADA
+  04011f218d62fc5d88419872b3e07ded5aeecf9b51a9d6a7b10f629a159423ac#1  2.000000 ADA
+  ccfeacfd4f5cbbda7a1d46528645fed40cddcd08181eadc078b0b959f8ae480c#1  2.000000 ADA
+  d5ab2b6f85192e3aade75da08e6a2265e862930f306c548df464ccc1cebb23f0#1  2.000000 ADA
+  25d7eb35139b56396a33b280c63cdbe0837d0f4303a2fb7a5e4c12b8a10d5450#1  2.000000 ADA
+  febf4cf204e636bb22f322dba8bdb2dc2283d43bab619df215fced86b91e5b03#1  2.000000 ADA
+  5c09c1f6551f33c1126e19a446413c98942e04775d77126292da11777abbc08b#1  2.000000 ADA
+  de3c8eb838aa4a297dbc4e20e3e5e31c3e0e74771c8693db987bad28aa0c14a6#1  2.000000 ADA
+  992c8481d42851f05b004313928cf5d60c7c0013231a113e52231df4df22db8b#1  2.000000 ADA
+  fd82964b053088277ea4da99d077ec132db3c98f10bc184f17e2d78c840526fb#1  2.000000 ADA
+  ae5f4ac03b3a322c2dd6fa3aea8da7ebb3cb2f7b7e3f046c089a3d110401857e#1  2.000000 ADA
+  065ff9e8cd4a41a996b87bc94576fcc325b5e9e079892be1067fda82fab243ec#1  2.000000 ADA
+  a09ff8277a2ee3502d7a858ae33b255bb21bddbd959ba164391e4834f0816d77#1  2.000000 ADA
+  ceb69aefe90c2d83dfc9a30093fce845ce8341740e20c5e3d72c2a8def318c1a#1  2.000000 ADA
+  518582c8bf987d8d87243a2c44d069acdfad95768fa54972858842f7ab6103e6#1  2.000000 ADA
+  9b76a30a1da504cca2e655f688efd508ff17627419f2e999b88c5fb411089ce3#1  2.000000 ADA
+  cdc1b9fc86ba90f31813d56e4a3f0eaa4baf3946891d4ee02a00f43bffef5158#1  2.000000 ADA
+  2c60d34e4ebee60e421b9b0a31e5e1e221412549e7ad145f04db439d1c0d1099#0  2.000000 ADA
+  200155561ebcf56adc1991b0da32ea9d21a88e6e39a86e7d110b7651725ee779#0  2.000000 ADA
+  200155561ebcf56adc1991b0da32ea9d21a88e6e39a86e7d110b7651725ee779#2  9151.400126 ADA
+  TOTAL: 9197.400126 ADA
+
+--- Script Address UTxOs BEFORE ---
+  ab80d11145393859e87a4a015788a7a43a452ef781dbc318314d52e952fbc687#0  3.000000 ADA + tokens
+  9d45edafc16c4bdd6edd6c44d5fc79257430ae874b049c29b86df26c74d3ae59#0  40.000000 ADA (plain ADA - non-citizen)
+  2c60d34e4ebee60e421b9b0a31e5e1e221412549e7ad145f04db439d1c0d1099#1  3.000000 ADA + tokens
+  200155561ebcf56adc1991b0da32ea9d21a88e6e39a86e7d110b7651725ee779#1  3.000000 ADA + tokens
+  TOTAL: 49.000000 ADA
+  Plain (non-citizen) UTxOs: 1
+
+============================================================
+STEP 2: Sending 50 ADA to script address
+============================================================
+Submitted: 48c06abdd1e526b13da09dc33fa516510843c087e9bea9499e8f1ba70c1afdd0
+Waiting for confirmation...
+Confirmed.
+
+--- Funding Wallet UTxOs AFTER SEND ---
+  2517cf535be7fc7c9ebbba17ab3111de60fe3eec5a1a87fc040ae477a5428711#0  2.000000 ADA + tokens
+  94d183352a09b77de984bf779e5e6bd6a818e18ec9601d74ea89bcb2a4f85190#0  2.000000 ADA + tokens
+  2a386f523e4f38a83b165cc1fbe6571fa3c226abc6ccdf8c5468f5b8594c6ff7#0  2.000000 ADA + tokens
+  5b453f52ada482aa60c7546be5509ebd98d648d6e98831e0ad527bca6548cc3e#1  2.000000 ADA
+  b31739828e393646106e25784338f18dd6d8f87e53d60ddd2350c1d648369902#1  2.000000 ADA
+  04011f218d62fc5d88419872b3e07ded5aeecf9b51a9d6a7b10f629a159423ac#1  2.000000 ADA
+  ccfeacfd4f5cbbda7a1d46528645fed40cddcd08181eadc078b0b959f8ae480c#1  2.000000 ADA
+  d5ab2b6f85192e3aade75da08e6a2265e862930f306c548df464ccc1cebb23f0#1  2.000000 ADA
+  25d7eb35139b56396a33b280c63cdbe0837d0f4303a2fb7a5e4c12b8a10d5450#1  2.000000 ADA
+  febf4cf204e636bb22f322dba8bdb2dc2283d43bab619df215fced86b91e5b03#1  2.000000 ADA
+  5c09c1f6551f33c1126e19a446413c98942e04775d77126292da11777abbc08b#1  2.000000 ADA
+  de3c8eb838aa4a297dbc4e20e3e5e31c3e0e74771c8693db987bad28aa0c14a6#1  2.000000 ADA
+  992c8481d42851f05b004313928cf5d60c7c0013231a113e52231df4df22db8b#1  2.000000 ADA
+  fd82964b053088277ea4da99d077ec132db3c98f10bc184f17e2d78c840526fb#1  2.000000 ADA
+  ae5f4ac03b3a322c2dd6fa3aea8da7ebb3cb2f7b7e3f046c089a3d110401857e#1  2.000000 ADA
+  065ff9e8cd4a41a996b87bc94576fcc325b5e9e079892be1067fda82fab243ec#1  2.000000 ADA
+  a09ff8277a2ee3502d7a858ae33b255bb21bddbd959ba164391e4834f0816d77#1  2.000000 ADA
+  ceb69aefe90c2d83dfc9a30093fce845ce8341740e20c5e3d72c2a8def318c1a#1  2.000000 ADA
+  518582c8bf987d8d87243a2c44d069acdfad95768fa54972858842f7ab6103e6#1  2.000000 ADA
+  9b76a30a1da504cca2e655f688efd508ff17627419f2e999b88c5fb411089ce3#1  2.000000 ADA
+  cdc1b9fc86ba90f31813d56e4a3f0eaa4baf3946891d4ee02a00f43bffef5158#1  2.000000 ADA
+  2c60d34e4ebee60e421b9b0a31e5e1e221412549e7ad145f04db439d1c0d1099#0  2.000000 ADA
+  200155561ebcf56adc1991b0da32ea9d21a88e6e39a86e7d110b7651725ee779#0  2.000000 ADA
+  48c06abdd1e526b13da09dc33fa516510843c087e9bea9499e8f1ba70c1afdd0#1  9101.234273 ADA
+  TOTAL: 9147.234273 ADA
+
+--- Script Address UTxOs AFTER SEND (should have new plain ADA UTXO) ---
+  ab80d11145393859e87a4a015788a7a43a452ef781dbc318314d52e952fbc687#0  3.000000 ADA + tokens
+  9d45edafc16c4bdd6edd6c44d5fc79257430ae874b049c29b86df26c74d3ae59#0  40.000000 ADA (plain ADA - non-citizen)
+  2c60d34e4ebee60e421b9b0a31e5e1e221412549e7ad145f04db439d1c0d1099#1  3.000000 ADA + tokens
+  200155561ebcf56adc1991b0da32ea9d21a88e6e39a86e7d110b7651725ee779#1  3.000000 ADA + tokens
+  48c06abdd1e526b13da09dc33fa516510843c087e9bea9499e8f1ba70c1afdd0#0  50.000000 ADA (plain ADA - non-citizen)
+  TOTAL: 99.000000 ADA
+  Plain (non-citizen) UTxOs: 2
+
+============================================================
+STEP 3: Recovering 50 ADA via withdraw_extra_funds
+============================================================
+{
+  "success": true,
+  "operation": "withdraw_extra_funds",
+  "tx_status": "confirmed",
+  "tx_hash": "66fe1e24efb8ed96976daf11148ceb6fedf39a00fbe8d616fe2813cbcf8cdae0",
+  "error": null,
+  "error_type": null,
+  "nonce_used": 0,
+  "nonce_after": 0,
+  "fee_lovelace": 338293,
+  "submitted_at": 1783308883.3565664,
+  "confirmed_at": 1783308921.9735265,
+  "duration_s": 38.62,
+  "to_address": "addr_test1vq2aeqdjc9m40zas6k6sa00nvqd4m9sh67c3ujjxx2vn4lg5a4mvw",
+  "amount_lovelace": 50000000,
+  "amount_ada": 50.0,
+  "receipt_asset": "53574545502d524543454950542d0000000000000000"
+}
+
+============================================================
+STEP 4: Final State
+============================================================
+
+--- Funding Wallet UTxOs AFTER RECOVERY ---
+  2517cf535be7fc7c9ebbba17ab3111de60fe3eec5a1a87fc040ae477a5428711#0  2.000000 ADA + tokens
+  94d183352a09b77de984bf779e5e6bd6a818e18ec9601d74ea89bcb2a4f85190#0  2.000000 ADA + tokens
+  2a386f523e4f38a83b165cc1fbe6571fa3c226abc6ccdf8c5468f5b8594c6ff7#0  2.000000 ADA + tokens
+  5b453f52ada482aa60c7546be5509ebd98d648d6e98831e0ad527bca6548cc3e#1  2.000000 ADA
+  b31739828e393646106e25784338f18dd6d8f87e53d60ddd2350c1d648369902#1  2.000000 ADA
+  04011f218d62fc5d88419872b3e07ded5aeecf9b51a9d6a7b10f629a159423ac#1  2.000000 ADA
+  ccfeacfd4f5cbbda7a1d46528645fed40cddcd08181eadc078b0b959f8ae480c#1  2.000000 ADA
+  d5ab2b6f85192e3aade75da08e6a2265e862930f306c548df464ccc1cebb23f0#1  2.000000 ADA
+  25d7eb35139b56396a33b280c63cdbe0837d0f4303a2fb7a5e4c12b8a10d5450#1  2.000000 ADA
+  febf4cf204e636bb22f322dba8bdb2dc2283d43bab619df215fced86b91e5b03#1  2.000000 ADA
+  5c09c1f6551f33c1126e19a446413c98942e04775d77126292da11777abbc08b#1  2.000000 ADA
+  de3c8eb838aa4a297dbc4e20e3e5e31c3e0e74771c8693db987bad28aa0c14a6#1  2.000000 ADA
+  992c8481d42851f05b004313928cf5d60c7c0013231a113e52231df4df22db8b#1  2.000000 ADA
+  fd82964b053088277ea4da99d077ec132db3c98f10bc184f17e2d78c840526fb#1  2.000000 ADA
+  ae5f4ac03b3a322c2dd6fa3aea8da7ebb3cb2f7b7e3f046c089a3d110401857e#1  2.000000 ADA
+  065ff9e8cd4a41a996b87bc94576fcc325b5e9e079892be1067fda82fab243ec#1  2.000000 ADA
+  a09ff8277a2ee3502d7a858ae33b255bb21bddbd959ba164391e4834f0816d77#1  2.000000 ADA
+  ceb69aefe90c2d83dfc9a30093fce845ce8341740e20c5e3d72c2a8def318c1a#1  2.000000 ADA
+  518582c8bf987d8d87243a2c44d069acdfad95768fa54972858842f7ab6103e6#1  2.000000 ADA
+  9b76a30a1da504cca2e655f688efd508ff17627419f2e999b88c5fb411089ce3#1  2.000000 ADA
+  cdc1b9fc86ba90f31813d56e4a3f0eaa4baf3946891d4ee02a00f43bffef5158#1  2.000000 ADA
+  2c60d34e4ebee60e421b9b0a31e5e1e221412549e7ad145f04db439d1c0d1099#0  2.000000 ADA
+  200155561ebcf56adc1991b0da32ea9d21a88e6e39a86e7d110b7651725ee779#0  2.000000 ADA
+  66fe1e24efb8ed96976daf11148ceb6fedf39a00fbe8d616fe2813cbcf8cdae0#0  50.000000 ADA
+  66fe1e24efb8ed96976daf11148ceb6fedf39a00fbe8d616fe2813cbcf8cdae0#2  9047.895980 ADA
+  TOTAL: 9143.895980 ADA
+
+--- Script Address UTxOs AFTER RECOVERY ---
+  ab80d11145393859e87a4a015788a7a43a452ef781dbc318314d52e952fbc687#0  3.000000 ADA + tokens
+  9d45edafc16c4bdd6edd6c44d5fc79257430ae874b049c29b86df26c74d3ae59#0  40.000000 ADA (plain ADA - non-citizen)
+  2c60d34e4ebee60e421b9b0a31e5e1e221412549e7ad145f04db439d1c0d1099#1  3.000000 ADA + tokens
+  200155561ebcf56adc1991b0da32ea9d21a88e6e39a86e7d110b7651725ee779#1  3.000000 ADA + tokens
+  48c06abdd1e526b13da09dc33fa516510843c087e9bea9499e8f1ba70c1afdd0#0  50.000000 ADA (plain ADA - non-citizen)
+  TOTAL: 99.000000 ADA
+  Plain (non-citizen) UTxOs: 2
+
+============================================================
+SUMMARY
+============================================================
+  Funding wallet before:  9197.400126 ADA
+  Funding wallet after:   9143.895980 ADA
+  Net change:             -53.504146 ADA
+  (expected ~-50 ADA net from fees)
