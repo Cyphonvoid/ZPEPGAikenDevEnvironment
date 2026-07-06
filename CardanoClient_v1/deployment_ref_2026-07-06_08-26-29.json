@@ -1,12 +1,12 @@
 {
   "network": "preprod",
   "deployed_from_wallet_address": "addr_test1vq2aeqdjc9m40zas6k6sa00nvqd4m9sh67c3ujjxx2vn4lg5a4mvw",
-  "transaction_hash": "43e0e33696d256f196d66c2c1a3abc58d0dd95a364a64ec10a6ac9dc39ae64be",
-  "genesis_transaction_hash": "5b453f52ada482aa60c7546be5509ebd98d648d6e98831e0ad527bca6548cc3e",
+  "transaction_hash": "19b5eb601a8d8a830dbde48f7fc427bd7960ef71d6e2097948672e82d106c98e",
+  "genesis_transaction_hash": "04011f218d62fc5d88419872b3e07ded5aeecf9b51a9d6a7b10f629a159423ac",
   "genesis_output_index": 1,
   "contract": {
-    "policy_id": "94d7a8e515462064d9b252f7d5a3a6b07af632612e6aa7fa286ee375",
-    "script_address": "addr_test1wz2d0289z4rzqexekff004dr56c84a3jvyhx4fl69phwxage79j6h",
+    "policy_id": "4d27d6f9e3402aa47eacdc7cfb26815247d098c08aa4426358c7e1a5",
+    "script_address": "addr_test1wpxj04heudqz4fr74nw8e7exs9fy05yccz92gsnrtrr7rfgtm2gwd",
     "bootstrap_generated_plutus_path": "bootstrap_generated_plutus.json"
   },
   "beacon": {
@@ -15,7 +15,7 @@
   },
   "deployment_type": "reference",
   "reference_script": {
-    "tx_hash": "41abc3740779585ffbb1b18f240d3b00a73d8b98338d88465750c7156554bbc5",
+    "tx_hash": "60119836d5f15c4a926629bc717e6c2cef5c46d9fa77dabda97617bf083a98c4",
     "output_index": 0
   }
 }

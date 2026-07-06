@@ -443,13 +443,16 @@ class CardanoClient:
     @staticmethod
     def _carry_forward(old: MasterDatum, **overrides) -> MasterDatum:
         fields = dict(
-            authority_key=old.authority_key, operator_key=old.operator_key,
-            owner_key=old.owner_key, owner_address=old.owner_address,
-            nonce=old.nonce + 1, is_paused=old.is_paused,
-            policy_id=old.policy_id, asset_name_prefix=old.asset_name_prefix,
-            forward_link=old.forward_link, backward_link=old.backward_link,
-            stats=old.stats,
-        )
+        authority_key=old.authority_key, operator_key=old.operator_key,
+        owner_key=old.owner_key, owner_address=old.owner_address,
+        nonce=old.nonce + 1, is_paused=old.is_paused,
+        policy_id=old.policy_id, asset_name_prefix=old.asset_name_prefix,
+        forward_link=old.forward_link, backward_link=old.backward_link,
+        stats=old.stats,
+        asset_name_scheme_for_humans=old.asset_name_scheme_for_humans,
+        asset_name_example_for_humans=old.asset_name_example_for_humans,
+        asset_name_description_for_humans=old.asset_name_description_for_humans,
+    )
         fields.update(overrides)
         return MasterDatum(**fields)
 
@@ -678,7 +681,7 @@ class CardanoClient:
     # ══════════════════════════════════════════════════════════════════════
     # Public: mint
     # ══════════════════════════════════════════════════════════════════════
-
+    
     def create_document_token(
         self,
         cross_chain_global_id: str,
@@ -688,17 +691,6 @@ class CardanoClient:
         token_data: dict,
         is_unique_document: bool = True,
     ) -> dict:
-        """
-        Mint a document token. Operator key required.
-
-        Args:
-            cross_chain_global_id: Human-readable global document identifier.
-            sha256_hash:           Hex string of the document SHA-256 hash (64 chars).
-            upload_date:           ISO 8601 date string e.g. "2026-07-04T00:00:00Z".
-            version:               Document version integer.
-            token_data:            Metadata dict, JSON-serialized internally.
-            is_unique_document:    Counts as a unique document. Default True.
-        """
         try:
             sha256_hash_bytes = bytes.fromhex(sha256_hash)
             if len(sha256_hash_bytes) != 32:
@@ -708,11 +700,30 @@ class CardanoClient:
                     ERROR_INVALID_INPUT,
                 )
 
+            # Validate version 1-99
+            if not (1 <= version <= 99):
+                return _failure(
+                    "create_document_token",
+                    f"version must be between 1 and 99, got {version}.",
+                    ERROR_INVALID_INPUT,
+                )
+
+            # New asset name scheme: ZPE_DOC-{uuid20}_v{version}
+            # cross_chain_global_id must be UUIDv7 without dashes (or at least 20 chars)
+            uuid_no_dashes = cross_chain_global_id.replace("-", "")
+            if len(uuid_no_dashes) < 20:
+                return _failure(
+                    "create_document_token",
+                    f"cross_chain_global_id must be at least 20 chars without dashes, got {len(uuid_no_dashes)}.",
+                    ERROR_INVALID_INPUT,
+                )
+            uuid_portion = uuid_no_dashes[:20]
+
             master_utxo, old_datum = self._get_master_utxo()
             ref_utxo = self._get_ref_utxo()
             nonce = old_datum.nonce
 
-            cross_chain_global_id_bytes = cross_chain_global_id.encode("utf-8")
+            cross_chain_global_id_bytes = uuid_no_dashes.encode("utf-8")
             upload_date_bytes           = upload_date.encode("utf-8")
             token_data_bytes            = json.dumps(token_data, separators=(",", ":")).encode("utf-8")
 
@@ -736,8 +747,9 @@ class CardanoClient:
                 signature=signature,
             )
 
-            asset_name = old_datum.asset_name_prefix + self._int_to_be(nonce, 4)
-            token_id   = self._policy_id + asset_name
+            asset_name_str = f"ZPE_DOC-{uuid_portion}_v{version}"
+            asset_name = asset_name_str.encode("utf-8")
+            token_id = self._policy_id + asset_name
             token_multi_asset = MultiAsset({
                 ScriptHash(self._policy_id): Asset({AssetName(asset_name): 1})
             })
@@ -946,6 +958,7 @@ class CardanoClient:
     # ══════════════════════════════════════════════════════════════════════
     # Public: update_key
     # ══════════════════════════════════════════════════════════════════════
+
     def update_key(
         self,
         key_type: Literal["authority", "operator", "owner"],
@@ -985,7 +998,7 @@ class CardanoClient:
             ref_utxo = self._get_ref_utxo()
             nonce = old_datum.nonce
 
-            signed_payload = self._int_to_be(nonce, 8) + b"UPDATE" + key_type_str + new_key
+            signed_payload = self._int_to_be(nonce, 8) + b"ROTATE" + key_type_str + new_key
             signature = self._sign_ed25519(self._authority_key, signed_payload)
 
             redeemer = RotateKey(nonce=nonce, key_type=key_tag, new_key=new_key, signature=signature)
@@ -1178,21 +1191,24 @@ class CardanoClient:
             return None
 
         return {
-            "utxo":                       f"{utxo.input.transaction_id}#{utxo.input.index}",
-            "nonce":                      datum.nonce,
-            "is_paused":                  isinstance(datum.is_paused, AikenTrue),
-            "total_token_count":          datum.stats.total_token_count,
-            "total_unique_documents":     datum.stats.total_unique_documents,
-            "last_minted_at":             datum.stats.last_minted_at,
-            "last_cross_chain_global_id": datum.stats.last_cross_chain_global_id.decode("utf-8", errors="replace"),
-            "last_cardano_asset_id":      datum.stats.last_cardano_asset_id.hex(),
-            "policy_id":                  self._policy_id.hex(),
-            "asset_name_prefix":          datum.asset_name_prefix.decode("utf-8", errors="replace"),
-            "authority_key":              datum.authority_key.hex(),
-            "operator_key":               datum.operator_key.hex(),
-            "owner_key":                  datum.owner_key.hex(),
-            "forward_link":               _link_to_dict(datum.forward_link),
-            "backward_link":              _link_to_dict(datum.backward_link),
+            "utxo":                                 f"{utxo.input.transaction_id}#{utxo.input.index}",
+            "nonce":                                datum.nonce,
+            "is_paused":                            isinstance(datum.is_paused, AikenTrue),
+            "total_token_count":                    datum.stats.total_token_count,
+            "total_unique_documents":               datum.stats.total_unique_documents,
+            "last_minted_at":                       datum.stats.last_minted_at,
+            "last_cross_chain_global_id":           datum.stats.last_cross_chain_global_id.decode("utf-8", errors="replace"),
+            "last_cardano_asset_id":                datum.stats.last_cardano_asset_id.hex(),
+            "policy_id":                            self._policy_id.hex(),
+            "asset_name_prefix":                    datum.asset_name_prefix.decode("utf-8", errors="replace"),
+            "authority_key":                        datum.authority_key.hex(),
+            "operator_key":                         datum.operator_key.hex(),
+            "owner_key":                            datum.owner_key.hex(),
+            "forward_link":                         _link_to_dict(datum.forward_link),
+            "backward_link":                        _link_to_dict(datum.backward_link),
+            "asset_name_scheme_for_humans":         datum.asset_name_scheme_for_humans.decode("utf-8", errors="replace"),
+            "asset_name_example_for_humans":        datum.asset_name_example_for_humans.decode("utf-8", errors="replace"),
+            "asset_name_description_for_humans":    datum.asset_name_description_for_humans.decode("utf-8", errors="replace"),
         }
 
     # ══════════════════════════════════════════════════════════════════════
@@ -1204,7 +1220,7 @@ class CardanoClient:
         return {
             "utxo":                   f"{u.input.transaction_id}#{u.input.index}",
             "cardano_asset_id":       datum.cardano_asset_id.hex(),
-            "asset_name":             datum.cardano_asset_id[len(self._policy_id):].hex(),
+            "asset_name":             datum.cardano_asset_id[len(self._policy_id):].decode("utf-8", errors="replace"),
             "cross_chain_global_id":  datum.cross_chain_global_id.decode("utf-8", errors="replace"),
             "registry_address":       datum.registry_address.decode("utf-8", errors="replace"),
             "policy_id":              datum.policy_id.hex(),
@@ -1252,25 +1268,57 @@ class CardanoClient:
     # Public: get_token
     # ══════════════════════════════════════════════════════════════════════
 
-    def get_token_global_id(self, cross_chain_global_id: str) -> Optional[dict]:
+    def get_tokens_by_global_id(self, cross_chain_global_id: str) -> list[dict]:
         """
-        Find a document token by its cross_chain_global_id.
+        Return all versions of a document token matching the given global ID,
+        sorted by version number ascending.
+        """
+        uuid_no_dashes = cross_chain_global_id.replace("-", "")
+        target = uuid_no_dashes.encode("utf-8")
+        matches = [
+            self._token_datum_to_dict(u, datum)
+            for u, datum in self._iter_token_utxos()
+            if datum.cross_chain_global_id == target
+        ]
+        matches.sort(key=lambda t: t["version"])
+        return matches
+    
 
-        Scans all token UTxOs at the script address and returns the first
-        match as a dict, or None if not found.
+    def get_token_by_version(self, cross_chain_global_id: str, version: int) -> Optional[dict]:
+        """
+        Direct O(1) lookup of a specific document token version by constructing
+        its asset name and querying Blockfrost directly.
 
         Args:
-            cross_chain_global_id: The global document identifier string.
+            cross_chain_global_id: UUIDv7 string (dashes optional).
+            version:               Version number (1-99).
 
         Returns:
-            Token dict with all TokenDatum fields, or None if not found.
+            Token dict or None if not found.
         """
-        target = cross_chain_global_id.encode("utf-8")
-        for u, datum in self._iter_token_utxos():
-            if datum.cross_chain_global_id == target:
-                return self._token_datum_to_dict(u, datum)
-        return None
+        try:
+            uuid_no_dashes = cross_chain_global_id.replace("-", "")
+            uuid_portion   = uuid_no_dashes[:20]
+            asset_name_str = f"ZPE_DOC-{uuid_portion}_v{version}"
+            asset_name     = asset_name_str.encode("utf-8")
 
+            utxos = self._backend.utxos(self._script_address)
+            for u in utxos:
+                qty = u.output.amount.multi_asset.get(
+                    ScriptHash(self._policy_id), {}
+                ).get(AssetName(asset_name), 0)
+                if qty == 1:
+                    if u.output.datum is None:
+                        return None
+                    try:
+                        datum = TokenDatum.from_cbor(u.output.datum.cbor)
+                        return self._token_datum_to_dict(u, datum)
+                    except Exception:
+                        return None
+            return None
+        except Exception:
+            return None
+        
     # ══════════════════════════════════════════════════════════════════════
     # Public: get_all_tokens
     # ══════════════════════════════════════════════════════════════════════

@@ -11,13 +11,13 @@ from pycardano import (
 )
 from blockfrost import ApiUrls
 
-DEPLOYMENT   = "deployment_ref_2026-07-06_04-40-22.json"  # update to your v2 ref json
+DEPLOYMENT   = "deployment_ref_2026-07-06_10-01-25.json"  # update to your v2 ref json
 PERM_KEYS    = "perm_keys.json"
 FUNDING_KEY  = "58200e0d160a055b49f5f0b3f3de26b87ebf51cde2ce3036b9fffe4acdc7a805d71e"
 FUNDING_ADDR = "addr_test1vq2aeqdjc9m40zas6k6sa00nvqd4m9sh67c3ujjxx2vn4lg5a4mvw"
 
 SEND_AMOUNT    = 10_000_000   # 50 ADA to script address
-RECOVER_AMOUNT = 10_000_000   # recover it all back
+RECOVER_AMOUNT = 20_000_000   # recover it all back
 
 client = CardanoClient(DEPLOYMENT, PERM_KEYS, FUNDING_KEY, network="preprod")
 
@@ -73,47 +73,6 @@ print("=" * 60)
 total_before = show_funding_utxos("BEFORE")
 show_script_utxos("BEFORE")
 
-
-# ════════════════════════════════════════════════════════════════════════
-# STEP 2: Send 50 ADA to script address
-# ════════════════════════════════════════════════════════════════════════
-
-print(f"\n{'=' * 60}")
-print(f"STEP 2: Sending {SEND_AMOUNT / 1_000_000:.0f} ADA to script address")
-print("=" * 60)
-
-builder = TransactionBuilder(context)
-builder.add_input_address(funding_address)
-builder.add_output(TransactionOutput(
-    address=script_address,
-    amount=SEND_AMOUNT,
-))
-signed_tx = builder.build_and_sign(
-    signing_keys=[funding_key],
-    change_address=funding_address,
-)
-send_tx_hash = str(signed_tx.id)
-context.submit_tx(signed_tx)
-print(f"Submitted: {send_tx_hash}")
-
-# Wait for confirmation
-import time
-print("Waiting for confirmation...")
-for _ in range(60):
-    try:
-        result = context.api.transaction_utxos(hash=send_tx_hash)
-        if getattr(result, "outputs", None):
-            print("Confirmed.")
-            break
-    except Exception:
-        pass
-    time.sleep(5)
-    
-print("Waiting for Blockfrost to index new UTxO...")
-time.sleep(15)  # give Blockfrost time to index the new script UTxO
-
-show_funding_utxos("AFTER SEND")
-show_script_utxos("AFTER SEND (should have new plain ADA UTXO)")
 
 
 # ════════════════════════════════════════════════════════════════════════

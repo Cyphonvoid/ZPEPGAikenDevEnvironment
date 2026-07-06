@@ -32,7 +32,7 @@ from pycardano import (
 )
 from blockfrost import ApiUrls
 
-DEPLOYMENT  = "deployment_ref_2026-07-06_04-40-22.json"  # update to your v2 ref json
+DEPLOYMENT  = "deployment_ref_2026-07-06_08-26-29.json"  # update to your v2 ref json
 PERM_KEYS   = "perm_keys.json"
 FUNDING_KEY = "58200e0d160a055b49f5f0b3f3de26b87ebf51cde2ce3036b9fffe4acdc7a805d71e"
 FUNDING_ADDR = "addr_test1vq2aeqdjc9m40zas6k6sa00nvqd4m9sh67c3ujjxx2vn4lg5a4mvw"
@@ -167,7 +167,7 @@ check("resume after double-pause — success", r, expect_success=True)
 
 section("6. create_document_token()")
 r = client.create_document_token(
-    cross_chain_global_id="sweep-test-v2-mint-001",
+    cross_chain_global_id="018f1a2b-3c4d-7e5f-8a9b-000000000001",
     sha256_hash="ab" * 32,
     upload_date="2026-07-05T00:00:00Z",
     version=1,
@@ -367,12 +367,12 @@ else:
 # 16. get_token_global_id
 # ════════════════════════════════════════════════════════════════════════
 
-section("16. get_token_global_id()")
-token = client.get_token_global_id("sweep-test-v2-mint-001")
+section("16. get_tokens_by_global_id()")
+token = client.get_tokens_by_global_id("018f1a2b-3c4d-7e5f-8a9b-000000000001")[0]
 print(json.dumps(token, indent=2) if token else "None")
-token_found = token is not None and token.get("cross_chain_global_id") == "sweep-test-v2-mint-001"
-results.append(("get_token_global_id", token_found))
-print(f"\n  [{'PASS' if token_found else 'FAIL'}] get_token_global_id — token found with correct global ID")
+token_found = token is not None and token.get("cross_chain_global_id") == "018f1a2b-3c4d-7e5f-8a9b-000000000001"
+results.append(("get_tokens_by_global_id", token_found))
+print(f"\n  [{'PASS' if token_found else 'FAIL'}] get_tokens_by_global_id — token found with correct global ID")
 
 # ════════════════════════════════════════════════════════════════════════
 # 17. get_all_tokens

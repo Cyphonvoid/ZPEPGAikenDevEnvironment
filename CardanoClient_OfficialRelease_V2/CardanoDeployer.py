@@ -42,6 +42,14 @@ Usage examples:
 
   # List UTXOs
   python3.12 CardanoDeployer.py --network preprod --funding-key <cbor> --list-utxos
+
+
+  Example: Full deployment with interactive UTXO picker
+  python3.12 CardanoDeployer.py \
+  --network preprod \
+  --funding-key 58200e0d160a055b49f5f0b3f3de26b87ebf51cde2ce3036b9fffe4acdc7a805d71e \
+  --perm-keys perm_keys.json \
+  --source-blueprint /workspaces/ZPEPGAikenDevEnvironment/zpepg_cardano_registry/plutus.json
 """
 
 from __future__ import annotations
@@ -79,6 +87,10 @@ except ImportError:
 # ══════════════════════════════════════════════════════════════════════════════
 # Constants
 # ══════════════════════════════════════════════════════════════════════════════
+
+ASSET_NAME_SCHEME      = b"ZPE_DOC-{uuid20}_v{version}"
+ASSET_NAME_EXAMPLE     = b"ZPE_DOC-018f1a2b3c4d7e5f8a9b_v1"
+ASSET_NAME_DESCRIPTION = b"ZPE_DOC- +no dashes first 20 UUIDv7 chars+version(v1,v2..)"
 
 BEACON_ASSET_NAME          = b"ZPEPG-BEACON"
 REGISTRY_ASSET_NAME_PREFIX = b"ZPEPG-ARCHIVE-DOC"
@@ -394,6 +406,9 @@ class CardanoDeployer:
                     last_cross_chain_global_id=b"",
                     last_cardano_asset_id=b"",
                 ),
+                asset_name_scheme_for_humans=ASSET_NAME_SCHEME,
+                asset_name_example_for_humans=ASSET_NAME_EXAMPLE,
+                asset_name_description_for_humans=ASSET_NAME_DESCRIPTION,
             )
 
             beacon_multi_asset = MultiAsset({

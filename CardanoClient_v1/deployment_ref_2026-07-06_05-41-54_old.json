@@ -1,0 +1,21 @@
+{
+  "network": "preprod",
+  "deployed_from_wallet_address": "addr_test1vq2aeqdjc9m40zas6k6sa00nvqd4m9sh67c3ujjxx2vn4lg5a4mvw",
+  "transaction_hash": "9ad173ea86fad6f9c32cc834d86a8d0a1ba8caab13e610f38b4ac985f8a147f4",
+  "genesis_transaction_hash": "b31739828e393646106e25784338f18dd6d8f87e53d60ddd2350c1d648369902",
+  "genesis_output_index": 1,
+  "contract": {
+    "policy_id": "1b01b1b7d64ffe6e5124325a393b5419381e0ce842ae4b4e7045277f",
+    "script_address": "addr_test1wqdsrvdh6e8lumj3yse95wfm2svns8svapp2uj6wwpzjwlcx2nl2y",
+    "bootstrap_generated_plutus_path": "bootstrap_generated_plutus.json"
+  },
+  "beacon": {
+    "asset_name_hex": "5a504550472d424541434f4e",
+    "asset_name_utf8": "ZPEPG-BEACON"
+  },
+  "deployment_type": "reference",
+  "reference_script": {
+    "tx_hash": "c0bfad1643799d5c55db2b3e3c8bc822641b53905931da839e3402e5ebc51259",
+    "output_index": 0
+  }
+}

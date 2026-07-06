@@ -171,9 +171,6 @@ pub type MasterDatum {
   forward_link: Option<DeploymentChainLink>,
   backward_link: Option<DeploymentChainLink>,
   stats: RegistryStats,
-  asset_name_scheme_for_humans: ByteArray,
-  asset_name_example_for_humans: ByteArray,
-  asset_name_description_for_humans: ByteArray,
 }
 
 // ── Deployment Chain Link Layout ──────────────────────────────────────────
@@ -461,41 +458,6 @@ validator archive_registry(genesis_ref: OutputReference, beacon_asset_name: Byte
         trace @"TRACE:MD:mint_quantity_not_1"
         expect mint_quantity == 1
 
-        // ── Validate asset name follows ZPE_DOC naming scheme ────────────
-        // Expected format: "ZPE_DOC-" + first 20 chars of UUIDv7 (no dashes) + "_v" + version digits
-        // Total: 8 + 20 + 2 + 1-2 = 31-32 bytes
-        let prefix = "ZPE_DOC-"
-        let separator = "_v"
-        let prefix_len = 8
-        let uuid_len = 20
-        let separator_len = 2
-        let asset_name_len = bytearray.length(asset_name)
-
-        // Prefix must be ZPE_DOC-
-        trace @"TRACE:MD:asset_name_prefix_mismatch"
-        expect bytearray.take(asset_name, prefix_len) == prefix
-
-        // UUID portion must be exactly 20 bytes
-        let uuid_portion = bytearray.slice(asset_name, prefix_len, prefix_len + uuid_len - 1)
-        trace @"TRACE:MD:asset_name_uuid_wrong_length"
-        expect bytearray.length(uuid_portion) == uuid_len
-
-        // Separator must be _v
-        let sep_start = prefix_len + uuid_len
-        trace @"TRACE:MD:asset_name_separator_mismatch"
-        expect bytearray.slice(asset_name, sep_start, sep_start + separator_len - 1) == separator
-
-        // Version portion must be 1-2 bytes (version 1-99)
-        let version_start = sep_start + separator_len
-        let version_len = asset_name_len - version_start
-        trace @"TRACE:MD:asset_name_version_wrong_length"
-        expect version_len >= 1 && version_len <= 2
-
-        // UUID portion must match the first 20 chars of cross_chain_global_id (no dashes)
-        // The client strips dashes from UUIDv7 before passing cross_chain_global_id
-        trace @"TRACE:MD:asset_name_uuid_mismatch"
-        expect uuid_portion == bytearray.take(cross_chain_global_id, uuid_len)
-
         let token_output_datum =
           find_token_output_with_datum(
             self.outputs,
@@ -561,9 +523,6 @@ validator archive_registry(genesis_ref: OutputReference, beacon_asset_name: Byte
         expect new_datum.forward_link == old_datum.forward_link
         trace @"TRACE:MD:backward_link_changed"
         expect new_datum.backward_link == old_datum.backward_link
-        expect new_datum.asset_name_scheme_for_humans == old_datum.asset_name_scheme_for_humans
-        expect new_datum.asset_name_example_for_humans == old_datum.asset_name_example_for_humans
-        expect new_datum.asset_name_description_for_humans == old_datum.asset_name_description_for_humans
 
         True
       }
@@ -592,9 +551,6 @@ validator archive_registry(genesis_ref: OutputReference, beacon_asset_name: Byte
         expect new_datum.asset_name_prefix == old_datum.asset_name_prefix
         expect new_datum.forward_link == old_datum.forward_link
         expect new_datum.backward_link == old_datum.backward_link
-        expect new_datum.asset_name_scheme_for_humans == old_datum.asset_name_scheme_for_humans
-        expect new_datum.asset_name_example_for_humans == old_datum.asset_name_example_for_humans
-        expect new_datum.asset_name_description_for_humans == old_datum.asset_name_description_for_humans
 
         True
       }
@@ -623,9 +579,6 @@ validator archive_registry(genesis_ref: OutputReference, beacon_asset_name: Byte
         expect new_datum.asset_name_prefix == old_datum.asset_name_prefix
         expect new_datum.forward_link == old_datum.forward_link
         expect new_datum.backward_link == old_datum.backward_link
-        expect new_datum.asset_name_scheme_for_humans == old_datum.asset_name_scheme_for_humans
-        expect new_datum.asset_name_example_for_humans == old_datum.asset_name_example_for_humans
-        expect new_datum.asset_name_description_for_humans == old_datum.asset_name_description_for_humans
 
         True
       }
@@ -681,9 +634,6 @@ validator archive_registry(genesis_ref: OutputReference, beacon_asset_name: Byte
         expect new_datum.asset_name_prefix == old_datum.asset_name_prefix
         expect new_datum.forward_link == old_datum.forward_link
         expect new_datum.backward_link == old_datum.backward_link
-        expect new_datum.asset_name_scheme_for_humans == old_datum.asset_name_scheme_for_humans
-        expect new_datum.asset_name_example_for_humans == old_datum.asset_name_example_for_humans
-        expect new_datum.asset_name_description_for_humans == old_datum.asset_name_description_for_humans
 
         True
       }
@@ -740,9 +690,6 @@ validator archive_registry(genesis_ref: OutputReference, beacon_asset_name: Byte
         expect new_datum.is_paused == old_datum.is_paused
         expect new_datum.policy_id == old_datum.policy_id
         expect new_datum.asset_name_prefix == old_datum.asset_name_prefix
-        expect new_datum.asset_name_scheme_for_humans == old_datum.asset_name_scheme_for_humans
-        expect new_datum.asset_name_example_for_humans == old_datum.asset_name_example_for_humans
-        expect new_datum.asset_name_description_for_humans == old_datum.asset_name_description_for_humans
 
         True
       }
@@ -799,9 +746,6 @@ validator archive_registry(genesis_ref: OutputReference, beacon_asset_name: Byte
         expect new_datum.is_paused == old_datum.is_paused
         expect new_datum.policy_id == old_datum.policy_id
         expect new_datum.asset_name_prefix == old_datum.asset_name_prefix
-        expect new_datum.asset_name_scheme_for_humans == old_datum.asset_name_scheme_for_humans
-        expect new_datum.asset_name_example_for_humans == old_datum.asset_name_example_for_humans
-        expect new_datum.asset_name_description_for_humans == old_datum.asset_name_description_for_humans
 
         True
       }
@@ -849,8 +793,8 @@ validator archive_registry(genesis_ref: OutputReference, beacon_asset_name: Byte
           beacon_asset_name,
         ) == 1
 
-        let prefix = "ZPE_DOC-"
-        let prefix_len = 8
+        let prefix = master_datum.asset_name_prefix
+        let prefix_len = bytearray.length(prefix)
         trace @"TRACE:MT:asset_name_prefix_mismatch"
         expect bytearray.take(asset_name, prefix_len) == prefix
 
