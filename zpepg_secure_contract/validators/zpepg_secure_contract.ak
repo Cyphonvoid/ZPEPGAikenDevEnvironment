@@ -1,6 +1,6 @@
 // =============================================================================
 // CONTRACT NAME: ArchiveRegistry
-// VERSION: 3.2 — Full Address Continuity For Document Tokens
+// VERSION: 3.3 — Genesis policy_id Validation
 // PURPOSE: A decentralized, immutable document metadata registry and native
 //          token asset issuance contract built on Cardano's eUTXO model.
 //
@@ -918,13 +918,23 @@ validator archive_registry(
             },
           )
 
-        // Verify script_hash in genesis MasterDatum equals actual policy_id
-        // This prevents permanent contract death from a misconfigured genesis datum.
-        // If script_hash is wrong, every future verify_master_transition call
-        // would fail permanently with no on-chain recovery path.
+        // Verify both identity fields in genesis MasterDatum equal actual policy_id.
+        //
+        // script_hash: if wrong, every future verify_master_transition call fails
+        //   permanently (loud, immediate, unrecoverable brick).
+        //
+        // policy_id: if wrong, the contract does not brick — nonces advance, stats
+        //   update, transactions confirm — but all document token validation runs
+        //   against the wrong policy ID silently. A quieter, harder-to-notice
+        //   failure mode, which is precisely why it deserves the same guard.
+        //
+        // Both fields are supposed to represent the same value (this script's hash).
+        // Both are checked here against the ledger-known policy_id at genesis,
+        // the only point where either can be set freely.
         expect InlineDatum(genesis_datum_data) = genesis_output.datum
         expect genesis_datum: MasterDatum = genesis_datum_data
         expect genesis_datum.script_hash == policy_id
+        expect genesis_datum.policy_id == policy_id
 
         True
       }
