@@ -1020,7 +1020,7 @@ validator archive_registry(
 
         True
       }
-
+      
       // Burning is permanently disabled — document tokens are forever
       BurnToken -> False
     }
